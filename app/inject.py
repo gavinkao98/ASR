@@ -10,9 +10,15 @@ from app.logger import get_logger
 
 log = get_logger("inject")
 
+# 目標視窗在貼上的瞬間會獨佔開啟剪貼簿讀取內容；還原時多重試幾次撐過那段鎖定，避免把
+# 使用者原本複製的東西洗掉（這正是「常常覆蓋掉之前複製內容」的成因）。OpenClipboard 是
+# 獨佔的：一直重試到搶得到＝目標視窗已讀完，順序天然正確。最多 20 × 0.05 ≈ 1 秒。
+_CLIP_RETRIES = 20
+_CLIP_WAIT = 0.05
+
 
 def _get_clipboard_text() -> str | None:
-    for _ in range(5):  # 剪貼簿被其他程式短暫鎖定時重試
+    for _ in range(_CLIP_RETRIES):  # 剪貼簿被其他程式短暫鎖定時重試
         try:
             win32clipboard.OpenClipboard()
             try:
@@ -22,12 +28,12 @@ def _get_clipboard_text() -> str | None:
             finally:
                 win32clipboard.CloseClipboard()
         except Exception:  # noqa: BLE001
-            time.sleep(0.05)
+            time.sleep(_CLIP_WAIT)
     return None
 
 
 def _set_clipboard_text(text: str) -> None:
-    for _ in range(5):
+    for _ in range(_CLIP_RETRIES):
         try:
             win32clipboard.OpenClipboard()
             try:
@@ -37,11 +43,14 @@ def _set_clipboard_text(text: str) -> None:
             finally:
                 win32clipboard.CloseClipboard()
         except Exception:  # noqa: BLE001
-            time.sleep(0.05)
+            time.sleep(_CLIP_WAIT)
     raise RuntimeError("無法寫入剪貼簿")
 
 
 class ClipboardGuard:
+    """備份進入時的剪貼簿文字，離開時還原；還原靠 _set_clipboard_text 的重試撐過目標視窗
+    的短暫鎖定，確保原本複製的內容不會被辨識結果覆蓋。"""
+
     def __enter__(self):
         self._saved = _get_clipboard_text()
         return self
@@ -67,7 +76,7 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
             _set_clipboard_text(text)
             time.sleep(0.05)           # 讓剪貼簿寫入落定
             keyboard.send("ctrl+v")
-            time.sleep(0.15)           # 貼上完成前不可還原剪貼簿
+            time.sleep(0.2)            # 給目標視窗抓走內容的時間；離開時的還原會重試撐過鎖定
         return True
     except Exception:  # noqa: BLE001
         log.exception("inject failed")

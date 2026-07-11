@@ -61,6 +61,18 @@ def test_snapshot_total_cap_stops_collecting():
     assert len(items) == 1               # 收了第一個之後達總量上限即停
 
 
+def test_snapshot_then_restore_roundtrip():
+    fmt_html = win32clipboard.RegisterClipboardFormat("HTML Format")
+    html = b"<html><body>hi</body></html>"
+    _put_formats([(win32con.CF_UNICODETEXT, "原文\0".encode("utf-16-le")),
+                  (fmt_html, html)])
+    saved = inject._snapshot_clipboard()
+    _set_clipboard_text("蓋掉")             # 模擬貼上流程覆寫
+    inject._restore_clipboard(saved)
+    assert _peek_format(fmt_html) == html   # 位元組級還原
+    assert _get_clipboard_text() == "原文"
+
+
 def test_clipboard_roundtrip():
     _set_clipboard_text("測試123 English")
     assert _get_clipboard_text() == "測試123 English"

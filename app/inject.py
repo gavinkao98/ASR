@@ -128,6 +128,23 @@ def _snapshot_clipboard(max_fmt_bytes: int = _MAX_FMT_BYTES,
     return None
 
 
+def _restore_clipboard(items: list[tuple[int, bytes]]) -> None:
+    """清空剪貼簿後把快照逐格式原樣放回（依快照順序＝原擁有者的優先順序）。"""
+    for _ in range(_CLIP_RETRIES):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                win32clipboard.EmptyClipboard()
+                for fmt, data in items:
+                    _write_format_bytes(fmt, data)
+                return
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:  # noqa: BLE001 - 每輪從 Empty 重來，重試安全
+            time.sleep(_CLIP_WAIT)
+    raise RuntimeError("無法還原剪貼簿")
+
+
 def _get_clipboard_text() -> str | None:
     for _ in range(_CLIP_RETRIES):  # 剪貼簿被其他程式短暫鎖定時重試
         try:

@@ -73,6 +73,65 @@ def test_snapshot_then_restore_roundtrip():
     assert _get_clipboard_text() == "原文"
 
 
+def _minimal_dib() -> bytes:
+    """2x2、24bpp、BI_RGB 的最小合法 DIB（BITMAPINFOHEADER＋補齊到 4 bytes 的像素列）。"""
+    header = struct.pack("<IiiHHIIiiII", 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0)
+    return header + bytes(16)
+
+
+def test_guard_restores_image_and_text_together():
+    dib = _minimal_dib()
+    _put_formats([(win32con.CF_UNICODETEXT, "原本\0".encode("utf-16-le")),
+                  (win32con.CF_DIB, dib)])
+    with ClipboardGuard():
+        _set_clipboard_text("辨識結果")
+    assert _peek_format(win32con.CF_DIB) == dib      # 圖片位元組級還原
+    assert _get_clipboard_text() == "原本"
+    win32clipboard.OpenClipboard()                    # Windows 由 DIB 自動合成 CF_BITMAP
+    try:
+        assert win32clipboard.IsClipboardFormatAvailable(win32con.CF_BITMAP)
+    finally:
+        win32clipboard.CloseClipboard()
+
+
+def test_guard_restores_file_list():
+    # DROPFILES 結構：pFiles=20、pt=(0,0)、fNC=0、fWide=1，接 UTF-16LE 路徑清單（雙 \0 結尾）
+    path = "C:\\Windows\\notepad.exe"
+    dropfiles = struct.pack("<IiiII", 20, 0, 0, 0, 1)
+    hdrop = dropfiles + (path + "\0\0").encode("utf-16-le")
+    fmt_effect = win32clipboard.RegisterClipboardFormat("Preferred DropEffect")
+    _put_formats([(win32con.CF_HDROP, hdrop),
+                  (fmt_effect, struct.pack("<I", 5))])  # DROPEFFECT_COPY|LINK＝檔案總管「複製」
+    with ClipboardGuard():
+        _set_clipboard_text("辨識結果")
+    win32clipboard.OpenClipboard()
+    try:  # 用 pywin32 原生解析驗證（證明 Windows 認得我們還原的結構，非自說自話）
+        assert win32clipboard.GetClipboardData(win32con.CF_HDROP) == (path,)
+    finally:
+        win32clipboard.CloseClipboard()
+    assert _peek_format(fmt_effect) == struct.pack("<I", 5)
+
+
+def test_guard_falls_back_to_text_when_snapshot_raises(monkeypatch):
+    _set_clipboard_text("退路文字")
+    monkeypatch.setattr(inject, "_snapshot_clipboard",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    with ClipboardGuard():
+        _set_clipboard_text("辨識結果")
+    assert _get_clipboard_text() == "退路文字"  # 快照炸掉仍以舊路徑還原文字
+
+
+def test_guard_empty_clipboard_keeps_pasted_text():
+    win32clipboard.OpenClipboard()
+    try:
+        win32clipboard.EmptyClipboard()  # 原本就空
+    finally:
+        win32clipboard.CloseClipboard()
+    with ClipboardGuard():
+        _set_clipboard_text("辨識結果")
+    assert _get_clipboard_text() == "辨識結果"  # 維持現行為：辨識文字留著（手動 Ctrl+V 退路）
+
+
 def test_clipboard_roundtrip():
     _set_clipboard_text("測試123 English")
     assert _get_clipboard_text() == "測試123 English"

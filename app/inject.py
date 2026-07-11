@@ -176,19 +176,30 @@ def _set_clipboard_text(text: str) -> None:
 
 
 class ClipboardGuard:
-    """備份進入時的剪貼簿文字，離開時還原；還原靠 _set_clipboard_text 的重試撐過目標視窗
-    的短暫鎖定，確保原本複製的內容不會被辨識結果覆蓋。"""
+    """進入時把剪貼簿白名單格式（文字/圖片/檔案/富文字）原始位元組全部快照，
+    離開時原樣還原；還原重試撐過目標視窗的短暫鎖定。快照失敗退回只備份文字的
+    舊行為——備份問題絕不擋住貼上。原剪貼簿為空時不還原（辨識文字留在剪貼簿，
+    保留「貼不進管理員視窗時手動 Ctrl+V」的退路）。"""
 
     def __enter__(self):
-        self._saved = _get_clipboard_text()
+        self._items: list[tuple[int, bytes]] | None = None
+        self._text: str | None = None
+        try:
+            self._items = _snapshot_clipboard()
+        except Exception:  # noqa: BLE001
+            log.warning("多格式快照失敗，退回純文字備份", exc_info=True)
+        if self._items is None:
+            self._text = _get_clipboard_text()
         return self
 
     def __exit__(self, *exc):
-        if self._saved is not None:
-            try:
-                _set_clipboard_text(self._saved)
-            except RuntimeError:
-                log.warning("還原剪貼簿失敗")
+        try:
+            if self._items:
+                _restore_clipboard(self._items)
+            elif self._items is None and self._text is not None:
+                _set_clipboard_text(self._text)
+        except RuntimeError:
+            log.warning("還原剪貼簿失敗")
         return False
 
 

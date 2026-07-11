@@ -8,7 +8,7 @@ _LOCK = threading.Lock()
 DEFAULTS = {
     "hotkey": "caps lock",
     "hold_threshold_ms": 300,
-    "engine": "breeze",              # breeze | qwen3
+    "engine": "qwen3",               # qwen3 | breeze
     "paste_mode": "clipboard",       # clipboard | type
     "use_punct_model": True,          # Breeze 輸出後是否過 ct-punc（Task 21 實測後定案預設）
     "verbatim": False,                # 原樣輸出：跳過熱詞替換與全形正規化，保留自動標點與簡轉繁

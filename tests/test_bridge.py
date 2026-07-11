@@ -33,6 +33,17 @@ def test_switch_engine_delegates(tmp_path, monkeypatch):
     assert app.engine_switches == ["qwen3"]
 
 
+def test_mark_first_run_done_loads_default_engine(tmp_path, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "c.json")
+    app = FakeApp()
+    b = Bridge(app)
+
+    assert b.mark_first_run_done() == {"ok": True}
+    assert config.load()["first_run_done"] is True
+    assert app.engine_switches == ["qwen3"]
+
+
 def test_hotwords_roundtrip(tmp_path, monkeypatch):
     from app.ui import bridge as bridge_mod
     monkeypatch.setattr(bridge_mod, "HOTWORDS_FILE", tmp_path / "hw.txt")

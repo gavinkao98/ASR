@@ -7,7 +7,7 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     cfg = config.load()
     assert cfg["hotkey"] == "caps lock"
     assert cfg["hold_threshold_ms"] == 300
-    assert cfg["engine"] == "breeze"
+    assert cfg["engine"] == "qwen3"
     assert cfg["paste_mode"] == "clipboard"
     assert cfg["use_punct_model"] is True
     assert cfg["history_enabled"] is True

@@ -142,12 +142,12 @@
 
   var fakeDb = {
     config: {
-      hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'breeze', paste_mode: 'clipboard',
+      hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'qwen3', paste_mode: 'clipboard',
       use_punct_model: true, verbatim: false, punct_min_chars: 10, force_language: null, sounds_enabled: true, mic_device: null,
       overlay_corner: 'bottom-right', history_enabled: true, autostart: false,
       first_run_done: true, qwen3_use_gpu: true
     },
-    engines: { breeze: { ready: true, active: true }, qwen3: { ready: false, active: false } },
+    engines: { breeze: { ready: false, active: false }, qwen3: { ready: true, active: true } },
     download: { active: false, progress: 0, label: '' },
     downloadTimer: null,
     hotwords: '# 範例熱詞（可自行刪改；預覽模式資料）\n派森=Python\n欸皮愛=API\n',
@@ -250,7 +250,7 @@
 
   function defaultConfigFallback() {
     return {
-      hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'breeze', paste_mode: 'clipboard',
+      hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'qwen3', paste_mode: 'clipboard',
       use_punct_model: true, verbatim: false, punct_min_chars: 10, force_language: null, sounds_enabled: true, mic_device: null,
       overlay_corner: 'bottom-right', history_enabled: true, autostart: false,
       first_run_done: true, qwen3_use_gpu: true
@@ -521,7 +521,7 @@
 
   function renderEngineSummary() {
     var cfg = appState.config || {};
-    var name = cfg.engine || 'breeze';
+    var name = cfg.engine || 'qwen3';
     var info = latestEngines[name] || {};
     var el = qs('#engine-summary');
     if (!el) return;
@@ -703,7 +703,7 @@
     try {
       var st = await Api.get_download_progress();
       if (st.active) {
-        downloadingEngine = downloadingEngine || 'breeze';
+        downloadingEngine = downloadingEngine || 'qwen3';
         setDownloadButtonsDisabled(true);
         var card = qs('.engine-card[data-engine="' + downloadingEngine + '"]');
         if (card) qs('.progress', card).hidden = false;
@@ -944,11 +944,11 @@
     var btn = qs('#wizard-start-download');
     try {
       latestEngines = await Api.get_engines();
-      if (latestEngines.breeze && latestEngines.breeze.ready) {
+      if (latestEngines.qwen3 && latestEngines.qwen3.ready) {
         var wp = qs('#wizard-progress');
         qs('#wizard-dl-fill').style.width = '100%';
         qs('#wizard-dl-pct').textContent = '100%';
-        qs('#wizard-dl-label').textContent = 'Breeze 模型已下載完成';
+        qs('#wizard-dl-label').textContent = 'Qwen3 模型已下載完成';
         wp.classList.add('is-done');
         wp.classList.remove('is-active', 'is-error');
         btn.disabled = false;
@@ -960,7 +960,7 @@
     try {
       var st = await Api.get_download_progress();
       if (st.active) {
-        downloadingEngine = downloadingEngine || 'breeze';
+        downloadingEngine = downloadingEngine || 'qwen3';
         btn.disabled = true;
         startPoll('download', pollDownload, 1000);
       } else {
@@ -981,13 +981,13 @@
     var btn = qs('#wizard-start-download');
     if (btn.dataset.mode === 'next') { goToWizardStep(3); return; }
     btn.disabled = true;
-    downloadingEngine = 'breeze';
+    downloadingEngine = 'qwen3';
     var wp = qs('#wizard-progress');
     wp.classList.add('is-active');
     wp.classList.remove('is-done', 'is-error');
     qs('#wizard-dl-label').textContent = '準備下載…';
     try {
-      await Api.download_engine('breeze');
+      await Api.download_engine('qwen3');
       startPoll('download', pollDownload, 1000);
     } catch (err) {
       btn.disabled = false;
@@ -1106,7 +1106,7 @@
     try {
       state = await Api.get_state();
     } catch (err) {
-      state = { first_run_done: true, version: '', engine: 'breeze', engine_state: 'idle', recording: false };
+      state = { first_run_done: true, version: '', engine: 'qwen3', engine_state: 'idle', recording: false };
     }
 
     var cfg;

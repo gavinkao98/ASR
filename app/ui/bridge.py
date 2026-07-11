@@ -60,6 +60,8 @@ class Bridge:
             try:
                 cb = lambda p, label: self._dl.update(progress=p, label=label)  # noqa: E731
                 if name == "qwen3":
+                    if not downloads.vad_ready():
+                        downloads.download_vad(cb)
                     downloads.download_qwen3(cb)
                 else:
                     downloads.download_vad(cb)
@@ -118,5 +120,7 @@ class Bridge:
             return {"cuda": False, "detail": f"檢查失敗：{e}"}
 
     def mark_first_run_done(self):
-        config.update({"first_run_done": True})
+        cfg = config.update({"first_run_done": True})
+        # 啟動時模型尚未下載完成會先載入失敗；精靈下載完成後重新載入目前預設引擎。
+        self._app.switch_engine_async(cfg["engine"])
         return {"ok": True}

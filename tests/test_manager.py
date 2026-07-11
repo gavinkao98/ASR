@@ -47,3 +47,11 @@ def test_state_reporting():
     assert mgr.state == "idle"
     mgr.switch("a")
     assert mgr.state == "ready"
+
+
+def test_transcribe_returns_engine_and_text():
+    a = FakeEngine("a")
+    mgr = EngineManager({"a": lambda: a})
+    mgr.switch("a")
+    eng, text = mgr.transcribe(None)
+    assert eng is a and text == "[a]"

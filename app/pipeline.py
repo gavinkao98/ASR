@@ -35,7 +35,8 @@ class Pipeline:
             self._notify("error")
             return
         self.recording = True
-        self._notify("start")
+        # 提示音/浮窗改由熱鍵層在「確認長按（過門檻）」時才觸發（見 hotkey on_hold），
+        # 這樣一般短按 CapsLock 不會叫也不會閃。
 
     def on_record_finish(self) -> None:
         if not self.recording:
@@ -66,8 +67,7 @@ class Pipeline:
         if speech is None or len(speech) == 0:
             self._notify("empty")
             return
-        engine = self._engines.current
-        raw = engine.transcribe(speech)
+        engine, raw = self._engines.transcribe(speech)   # 鎖內辨識，切換引擎時不會被卸載
         text = self._chain_factory(engine)(raw)
         if not text:
             self._notify("empty")

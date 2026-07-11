@@ -98,6 +98,13 @@ class App:
 
         threading.Thread(target=level_pump, daemon=True).start()
 
+        def on_hold() -> None:
+            # 只有確認長按、且真的在錄音（引擎就緒、麥克風有開）時才給提示音+浮窗
+            if self.pipeline.recording:
+                notify("start")
+
+        self._on_hold = on_hold
+
         self.listener = self._make_listener(cfg)
 
         def on_toggle_pause(paused: bool) -> None:
@@ -110,6 +117,11 @@ class App:
 
         def on_quit() -> None:
             self.listener.stop()
+            try:
+                if self.engines.current is not None:
+                    self.engines.current.unload()  # 釋放顯卡 / 關掉 Qwen3 子行程
+            except Exception:  # noqa: BLE001
+                log.exception("engine unload on quit failed")
             os._exit(0)  # 常駐執行緒眾多，直接退出最乾淨
 
         self.tray = Tray(on_toggle_pause=on_toggle_pause,
@@ -134,6 +146,7 @@ class App:
             cfg["hotkey"], cfg["hold_threshold_ms"],
             on_start=self.pipeline.on_record_start,
             on_finish=self.pipeline.on_record_finish,
+            on_hold=self._on_hold,   # 確認長按才給提示音/浮窗
         )
         # 短按取消：換掉狀態機的 cancel 回呼，同時補送原鍵
         orig_cancel = listener._sm._on_cancel_tap

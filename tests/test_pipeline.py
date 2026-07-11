@@ -16,6 +16,9 @@ class FakeManager:
     current = FakeEngine()
     state = "ready"
 
+    def transcribe(self, samples, sample_rate=16000):
+        return self.current, self.current.transcribe(samples, sample_rate)
+
 
 class FakeRecorder:
     level = 0.0

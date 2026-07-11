@@ -24,6 +24,7 @@ class EngineManager:
                 self.current.unload()
                 self.current = None
             self.state = "loading"
+            eng = None
             try:
                 eng = self._factories[name]()
                 eng.load()
@@ -31,4 +32,17 @@ class EngineManager:
                 self.state = "ready"
             except Exception:
                 self.state = "error"
+                if eng is not None:            # 載入失敗時清掉半成品（如已啟動的子行程）
+                    try:
+                        eng.unload()
+                    except Exception:  # noqa: BLE001
+                        pass
                 raise
+
+    def transcribe(self, samples, sample_rate: int = 16000):
+        """在鎖內取用目前引擎並辨識，確保辨識期間不會被 switch 卸載。回傳 (engine, text)。"""
+        with self._lock:
+            eng = self.current
+            if eng is None or self.state != "ready":
+                raise RuntimeError("引擎尚未就緒")
+            return eng, eng.transcribe(samples, sample_rate)

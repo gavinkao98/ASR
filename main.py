@@ -6,6 +6,10 @@ from pathlib import Path
 
 
 def _inject_nvidia_dlls() -> None:
+    """把 pip 安裝的 cuBLAS/cuDNN DLL 目錄加進搜尋路徑（Windows 專用）。
+    add_dll_directory 讓 CTranslate2 直接載入的 DLL 找得到；但 cuDNN 8 主 DLL 會用
+    「裸檔名 LoadLibrary」載入它的子模組（cudnn_ops_infer64_8.dll 等），那條路徑走的是
+    標準搜尋順序、不含 add_dll_directory 的目錄——所以同時把目錄前置到 PATH，兩邊都補。"""
     try:
         import nvidia  # noqa: F401
     except ImportError:
@@ -13,6 +17,7 @@ def _inject_nvidia_dlls() -> None:
     nvidia_root = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
     for bin_dir in nvidia_root.glob("*/bin"):
         os.add_dll_directory(str(bin_dir))
+        os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ["PATH"]
 
 
 _inject_nvidia_dlls()

@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>語音輸入設定</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- 連線狀態（浮動角標；離線預覽模式時會標示清楚） -->
+<div class="status-chip" id="conn-status" data-connected="true">
+  <span class="status-dot" aria-hidden="true"></span>
+  <span class="status-text" id="conn-status-text">連線中…</span>
+</div>
+
+<!-- ========== 首次啟動精靈 ========== -->
+<div class="wizard" id="wizard" hidden>
+  <div class="wizard-card">
+    <div class="wizard-brand">
+      <svg class="brand-mark" viewBox="0 0 28 20" aria-hidden="true">
+        <rect class="wf-bar wf-bar-1" x="0"    y="7" width="3.2" height="6"  rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-2" x="6.2"  y="3" width="3.2" height="14" rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-3" x="12.4" y="0" width="3.2" height="20" rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-4" x="18.6" y="3" width="3.2" height="14" rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-5" x="24.8" y="7" width="3.2" height="6"  rx="1.6"></rect>
+      </svg>
+      <span>語音輸入 · 初次設定</span>
+    </div>
+
+    <div class="wizard-steps" aria-hidden="true">
+      <div class="wizard-step-dot" data-step="1"></div>
+      <div class="wizard-step-line" data-line="1"></div>
+      <div class="wizard-step-dot" data-step="2"></div>
+      <div class="wizard-step-line" data-line="2"></div>
+      <div class="wizard-step-dot" data-step="3"></div>
+    </div>
+
+    <!-- 步驟 1：環境檢查 -->
+    <section class="wizard-pane" data-step="1">
+      <h1>環境檢查</h1>
+      <p class="wizard-desc">確認顯示卡加速環境是否就緒，這會影響辨識速度。</p>
+      <div class="env-result" id="env-result">
+        <div class="spinner" id="env-spinner"></div>
+        <svg class="env-icon" id="env-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" hidden>
+          <path id="env-icon-path"></path>
+        </svg>
+        <div class="env-result-text">
+          <span class="env-result-title" id="env-title">正在檢查環境…</span>
+          <span class="env-result-detail mono" id="env-detail"></span>
+          <span class="env-result-note" id="env-note" hidden></span>
+        </div>
+      </div>
+      <div class="wizard-actions">
+        <span></span>
+        <button class="btn btn-primary" id="wizard-next-1" disabled>下一步</button>
+      </div>
+    </section>
+
+    <!-- 步驟 2：下載模型 -->
+    <section class="wizard-pane" data-step="2" hidden>
+      <h1>下載辨識模型</h1>
+      <p class="wizard-desc">首次使用需下載 Breeze 語音辨識模型與標點模型，共約 1.9GB，需要網路連線。</p>
+      <div class="progress progress-lg" id="wizard-progress">
+        <div class="progress-track"><div class="progress-fill" id="wizard-dl-fill"></div></div>
+        <div class="progress-label">
+          <span id="wizard-dl-label">尚未開始下載</span>
+          <span class="mono" id="wizard-dl-pct">0%</span>
+        </div>
+      </div>
+      <div class="wizard-actions">
+        <button class="btn btn-ghost" id="wizard-back-2">上一步</button>
+        <button class="btn btn-primary" id="wizard-start-download">開始下載</button>
+      </div>
+    </section>
+
+    <!-- 步驟 3：麥克風測試 -->
+    <section class="wizard-pane" data-step="3" hidden>
+      <h1>麥克風測試</h1>
+      <p class="wizard-desc">按下方按鈕後說幾句話，確認麥克風能收到聲音。</p>
+      <div class="mic-test">
+        <button class="mic-button" id="wizard-mic-btn" aria-label="開始麥克風測試">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="3" width="6" height="11" rx="3"></rect>
+            <path d="M5 11a7 7 0 0 0 14 0"></path>
+            <line x1="12" y1="18" x2="12" y2="21.5"></line>
+            <line x1="8.5" y1="21.5" x2="15.5" y2="21.5"></line>
+          </svg>
+        </button>
+        <p class="mic-test-hint" id="wizard-mic-hint">點一下開始，錄 3 秒</p>
+        <div class="level-meter" id="wizard-mic-meter"></div>
+        <p class="mic-test-result" id="wizard-mic-result"></p>
+      </div>
+      <div class="wizard-actions">
+        <button class="btn btn-ghost" id="wizard-back-3">上一步</button>
+        <button class="btn btn-primary" id="wizard-finish" disabled>完成設定</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ========== 主畫面（分頁式設定） ========== -->
+<div class="shell" id="shell" hidden>
+  <nav class="rail">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 28 20" aria-hidden="true">
+        <rect class="wf-bar wf-bar-1" x="0"    y="7" width="3.2" height="6"  rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-2" x="6.2"  y="3" width="3.2" height="14" rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-3" x="12.4" y="0" width="3.2" height="20" rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-4" x="18.6" y="3" width="3.2" height="14" rx="1.6"></rect>
+        <rect class="wf-bar wf-bar-5" x="24.8" y="7" width="3.2" height="6"  rx="1.6"></rect>
+      </svg>
+      <div class="brand-text">
+        <span class="brand-name">語音輸入</span>
+        <span class="brand-version mono" id="app-version">v—</span>
+      </div>
+    </div>
+
+    <div class="nav-list" role="tablist" aria-orientation="vertical">
+      <button class="nav-item" id="nav-general" data-tab="general" role="tab" aria-selected="true" aria-controls="pane-general">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <line x1="4" y1="7" x2="20" y2="7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+          <circle cx="9" cy="7" r="2.1" fill="currentColor"></circle>
+          <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+          <circle cx="15" cy="12" r="2.1" fill="currentColor"></circle>
+          <line x1="4" y1="17" x2="20" y2="17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+          <circle cx="11" cy="17" r="2.1" fill="currentColor"></circle>
+        </svg>
+        <span>一般</span>
+      </button>
+
+      <button class="nav-item" id="nav-hotkey" data-tab="hotkey" role="tab" aria-selected="false" aria-controls="pane-hotkey">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3.5" y="6" width="17" height="12" rx="3"></rect>
+          <path d="M8 11.2h.01M12 11.2h.01M16 11.2h.01"></path>
+          <path d="M7.5 15h9"></path>
+        </svg>
+        <span>熱鍵</span>
+      </button>
+
+      <button class="nav-item" id="nav-models" data-tab="models" role="tab" aria-selected="false" aria-controls="pane-models">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="7" y="7" width="10" height="10" rx="2"></rect>
+          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l1.8 1.8M16.2 16.2 18 18M18 6l-1.8 1.8M7.8 16.2 6 18"></path>
+        </svg>
+        <span>模型</span>
+      </button>
+
+      <button class="nav-item" id="nav-hotwords" data-tab="hotwords" role="tab" aria-selected="false" aria-controls="pane-hotwords">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M11.3 4h6.2A2.5 2.5 0 0 1 20 6.5v6.2a2.5 2.5 0 0 1-.73 1.77l-7 7a2.5 2.5 0 0 1-3.54 0l-5-5a2.5 2.5 0 0 1 0-3.54l7-7A2.5 2.5 0 0 1 11.3 4z"></path>
+          <circle cx="15.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"></circle>
+        </svg>
+        <span>熱詞</span>
+      </button>
+
+      <button class="nav-item" id="nav-history" data-tab="history" role="tab" aria-selected="false" aria-controls="pane-history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 4v5h5"></path>
+          <path d="M4.5 13a8 8 0 1 0 2.5-6.2L4 9"></path>
+          <path d="M12 8v5l3.5 2"></path>
+        </svg>
+        <span>歷史</span>
+      </button>
+    </div>
+
+    <div class="rail-foot" id="engine-summary"></div>
+  </nav>
+
+  <main class="content">
+    <div class="content-inner">
+
+      <!-- 一般 -->
+      <section class="pane pane-anim" data-tab="general" id="pane-general" role="tabpanel" aria-labelledby="nav-general">
+        <h1 class="pane-title">一般設定</h1>
+        <p class="pane-subtitle">調整語音輸入的基本行為</p>
+
+        <div class="panel">
+          <div class="row">
+            <div class="row-text">
+              <label for="toggle-autostart">開機自啟</label>
+              <p>登入 Windows 後自動在背景執行語音輸入</p>
+            </div>
+            <button class="switch" id="toggle-autostart" role="switch" aria-checked="false">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <div class="row-divider"></div>
+          <div class="row">
+            <div class="row-text">
+              <label for="toggle-sounds">提示音</label>
+              <p>開始與結束錄音時播放提示音效</p>
+            </div>
+            <button class="switch" id="toggle-sounds" role="switch" aria-checked="true">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <div class="row-divider"></div>
+          <div class="row">
+            <div class="row-text">
+              <label id="paste-mode-label">貼上方式</label>
+              <p id="paste-mode-hint">文字要如何送到目前的游標位置</p>
+            </div>
+            <div class="segmented" id="paste-mode" role="radiogroup" aria-labelledby="paste-mode-label">
+              <button class="segmented-btn" data-value="clipboard" role="radio" aria-checked="true">剪貼簿</button>
+              <button class="segmented-btn" data-value="type" role="radio" aria-checked="false">逐字輸入</button>
+            </div>
+          </div>
+          <div class="row-divider"></div>
+          <div class="row">
+            <div class="row-text">
+              <label for="mic-select">麥克風裝置</label>
+              <p>選擇要用來收音的麥克風</p>
+            </div>
+            <div class="select-wrap">
+              <select class="select" id="mic-select"></select>
+              <svg class="select-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 熱鍵 -->
+      <section class="pane" data-tab="hotkey" id="pane-hotkey" role="tabpanel" aria-labelledby="nav-hotkey" hidden>
+        <h1 class="pane-title">熱鍵</h1>
+        <p class="pane-subtitle">設定用來啟動語音輸入的按鍵</p>
+
+        <div class="panel">
+          <div class="row">
+            <div class="row-text">
+              <label>觸發鍵</label>
+              <p>按住此鍵開始說話，放開後自動貼上辨識結果</p>
+            </div>
+            <button class="key-capture" id="hotkey-capture">
+              <kbd id="hotkey-display">Caps Lock</kbd>
+              <span class="key-capture-hint" id="hotkey-capture-hint">點一下重新設定</span>
+            </button>
+          </div>
+          <div class="row-divider"></div>
+          <div class="row row-col">
+            <div class="row-text">
+              <label for="hold-threshold">長按判定時間</label>
+              <p>按住超過這段時間才會開始錄音，避免手滑誤觸</p>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="hold-threshold" class="slider" min="100" max="800" step="50" value="300">
+              <span class="slider-value mono" id="hold-threshold-value">300 ms</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 模型 -->
+      <section class="pane" data-tab="models" id="pane-models" role="tabpanel" aria-labelledby="nav-models" hidden>
+        <h1 class="pane-title">辨識引擎</h1>
+        <p class="pane-subtitle">選擇並管理語音辨識所使用的模型</p>
+
+        <div class="panel">
+          <div class="engine-card" data-engine="breeze">
+            <div class="engine-info">
+              <div class="engine-name-row">
+                <span class="engine-name">Breeze-ASR-25</span>
+                <span class="pill" data-state="none">未下載</span>
+              </div>
+              <p class="engine-desc">繁體中文最佳化、辨識速度快，預設引擎</p>
+              <div class="progress" hidden>
+                <div class="progress-track"><div class="progress-fill"></div></div>
+                <div class="progress-label"><span class="progress-text">準備中…</span><span class="progress-pct mono">0%</span></div>
+              </div>
+            </div>
+            <div class="engine-actions">
+              <button class="btn btn-secondary" data-action="download" data-engine="breeze">下載</button>
+              <button class="btn btn-primary" data-action="switch" data-engine="breeze" hidden>切換使用</button>
+            </div>
+          </div>
+          <div class="row-divider"></div>
+          <div class="engine-card" data-engine="qwen3">
+            <div class="engine-info">
+              <div class="engine-name-row">
+                <span class="engine-name">Qwen3-ASR-1.7B</span>
+                <span class="pill" data-state="none">未下載</span>
+              </div>
+              <p class="engine-desc">選配引擎，多語能力較強；下載約 2GB，需要網路連線</p>
+              <div class="progress" hidden>
+                <div class="progress-track"><div class="progress-fill"></div></div>
+                <div class="progress-label"><span class="progress-text">準備中…</span><span class="progress-pct mono">0%</span></div>
+              </div>
+            </div>
+            <div class="engine-actions">
+              <button class="btn btn-secondary" data-action="download" data-engine="qwen3">下載</button>
+              <button class="btn btn-primary" data-action="switch" data-engine="qwen3" hidden>切換使用</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 熱詞 -->
+      <section class="pane" data-tab="hotwords" id="pane-hotwords" role="tabpanel" aria-labelledby="nav-hotwords" hidden>
+        <h1 class="pane-title">熱詞</h1>
+        <p class="pane-subtitle">修正常見的誤辨字詞，儲存後立即生效</p>
+
+        <div class="panel panel-flush">
+          <div class="panel-header">
+            <h2>熱詞規則</h2>
+            <p class="panel-desc">每行一條規則：<code class="mono">誤辨詞=正確詞</code>；以 <code class="mono">#</code> 開頭的整行視為註解</p>
+          </div>
+          <div style="padding: 16px 4px 0;">
+            <textarea class="textarea" id="hotwords-text" spellcheck="false" placeholder="派森=Python&#10;卡斯騰=Custom&#10;# 這是註解"></textarea>
+          </div>
+          <div class="panel-footer">
+            <span class="save-hint" id="hotwords-hint"></span>
+            <button class="btn btn-primary" id="hotwords-save">儲存</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 歷史 -->
+      <section class="pane" data-tab="history" id="pane-history" role="tabpanel" aria-labelledby="nav-history" hidden>
+        <h1 class="pane-title">歷史紀錄</h1>
+        <p class="pane-subtitle">最近 200 筆語音辨識結果，點一下即可複製文字</p>
+
+        <div class="panel panel-flush">
+          <div class="row">
+            <div class="row-text">
+              <label for="toggle-history">記錄歷史</label>
+              <p>將辨識結果記錄下來，方便之後查閱或複製</p>
+            </div>
+            <button class="switch" id="toggle-history" role="switch" aria-checked="true">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <div class="row-divider"></div>
+          <div class="panel-header history-header">
+            <div>
+              <h2>紀錄清單</h2>
+              <p class="panel-desc" id="history-count">共 0 筆</p>
+            </div>
+            <button class="btn btn-outline-danger" id="history-clear">清空</button>
+          </div>
+          <div class="history-list" id="history-list"></div>
+          <div class="empty-state" id="history-empty" hidden>
+            <svg viewBox="0 0 120 32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 16h14l6-11 9 22 9-22 6 11h14" stroke-width="2"></path>
+              <path d="M76 16h40" stroke-width="2" stroke-dasharray="1 8"></path>
+            </svg>
+            <p>還沒有任何紀錄，開始使用語音輸入後會顯示在這裡</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

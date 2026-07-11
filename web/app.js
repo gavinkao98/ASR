@@ -16,6 +16,8 @@
 
   function setSwitch(el, checked) { el.setAttribute('aria-checked', checked ? 'true' : 'false'); }
 
+  function punctLabel(v) { return Number(v) <= 0 ? '關閉' : (v + ' 字'); }
+
   function setSegmented(container, value) {
     qsa('.segmented-btn', container).forEach(function (btn) {
       btn.setAttribute('aria-checked', btn.dataset.value === value ? 'true' : 'false');
@@ -141,7 +143,7 @@
   var fakeDb = {
     config: {
       hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'breeze', paste_mode: 'clipboard',
-      use_punct_model: true, force_language: null, sounds_enabled: true, mic_device: null,
+      use_punct_model: true, verbatim: false, punct_min_chars: 10, force_language: null, sounds_enabled: true, mic_device: null,
       overlay_corner: 'bottom-right', history_enabled: true, autostart: false,
       first_run_done: true, qwen3_use_gpu: true
     },
@@ -249,7 +251,7 @@
   function defaultConfigFallback() {
     return {
       hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'breeze', paste_mode: 'clipboard',
-      use_punct_model: true, force_language: null, sounds_enabled: true, mic_device: null,
+      use_punct_model: true, verbatim: false, punct_min_chars: 10, force_language: null, sounds_enabled: true, mic_device: null,
       overlay_corner: 'bottom-right', history_enabled: true, autostart: false,
       first_run_done: true, qwen3_use_gpu: true
     };
@@ -293,9 +295,15 @@
   function applyConfigToGeneralTab(cfg) {
     setSwitch(qs('#toggle-autostart'), !!cfg.autostart);
     setSwitch(qs('#toggle-sounds'), cfg.sounds_enabled !== false);
+    setSwitch(qs('#toggle-verbatim'), !!cfg.verbatim);
     var pasteMode = cfg.paste_mode || 'clipboard';
     setSegmented(qs('#paste-mode'), pasteMode);
     updatePasteModeHint(pasteMode);
+    var punctSlider = qs('#punct-min');
+    var pv = (cfg.punct_min_chars == null) ? 10 : cfg.punct_min_chars;
+    punctSlider.value = pv;
+    updateSliderFill(punctSlider);
+    qs('#punct-min-value').textContent = punctLabel(pv);
   }
 
   function initGeneralTab() {
@@ -327,6 +335,18 @@
       }
     });
 
+    var verbatimBtn = qs('#toggle-verbatim');
+    verbatimBtn.addEventListener('click', async function () {
+      var next = verbatimBtn.getAttribute('aria-checked') !== 'true';
+      setSwitch(verbatimBtn, next);
+      try {
+        appState.config = await Api.set_config({ verbatim: next });
+      } catch (err) {
+        setSwitch(verbatimBtn, !next);
+        showToast('設定失敗，請稍後再試');
+      }
+    });
+
     var pasteGroup = qs('#paste-mode');
     qsa('.segmented-btn', pasteGroup).forEach(function (btn) {
       btn.addEventListener('click', async function () {
@@ -348,6 +368,19 @@
       var value = e.target.value;
       try {
         appState.config = await Api.set_config({ mic_device: value === '' ? null : value });
+      } catch (err) {
+        showToast('設定失敗，請稍後再試');
+      }
+    });
+
+    var punctSlider = qs('#punct-min');
+    punctSlider.addEventListener('input', function () {
+      updateSliderFill(punctSlider);
+      qs('#punct-min-value').textContent = punctLabel(punctSlider.value);
+    });
+    punctSlider.addEventListener('change', async function () {
+      try {
+        appState.config = await Api.set_config({ punct_min_chars: Number(punctSlider.value) });
       } catch (err) {
         showToast('設定失敗，請稍後再試');
       }

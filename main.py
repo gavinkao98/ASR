@@ -70,6 +70,8 @@ class App:
                 outputs_simplified=engine.outputs_simplified,
                 use_punct_model=c["use_punct_model"],
                 punct_fn=add_punct, hotwords_path=HOTWORDS_FILE,
+                verbatim=c.get("verbatim", False),
+                punct_min_chars=c.get("punct_min_chars", 10),
             )
 
         def notify(kind: str) -> None:
@@ -147,10 +149,16 @@ class App:
     def _make_listener(self, cfg):
         from app.hotkey import HotkeyListener
 
+        def on_finish():
+            # 放開就立刻收浮窗：聲浪只代表「錄音中」，辨識在背景默默進行。就算辨識較久、
+            # 甚至引擎卡住，浮窗也不會賴著不走（先前「用幾次後聲浪停不下來」多半是卡在這）。
+            self.overlay.hide()
+            self.pipeline.on_record_finish()
+
         listener = HotkeyListener(
             cfg["hotkey"], cfg["hold_threshold_ms"],
             on_start=self.pipeline.on_record_start,
-            on_finish=self.pipeline.on_record_finish,
+            on_finish=on_finish,
             on_hold=self._on_hold,   # 確認長按才給提示音/浮窗
         )
         # 短按取消：換掉狀態機的 cancel 回呼，同時補送原鍵

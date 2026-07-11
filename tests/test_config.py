@@ -11,6 +11,8 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg["paste_mode"] == "clipboard"
     assert cfg["use_punct_model"] is True
     assert cfg["history_enabled"] is True
+    assert cfg["verbatim"] is False
+    assert cfg["punct_min_chars"] == 10
 
 
 def test_save_and_reload_merge(tmp_path, monkeypatch):

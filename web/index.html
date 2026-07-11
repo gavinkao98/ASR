@@ -210,6 +210,27 @@
           <div class="row-divider"></div>
           <div class="row">
             <div class="row-text">
+              <label for="toggle-verbatim">原樣輸出</label>
+              <p>直接輸出辨識結果，保留自動標點，但不套用熱詞替換與標點正規化</p>
+            </div>
+            <button class="switch" id="toggle-verbatim" role="switch" aria-checked="false">
+              <span class="switch-thumb"></span>
+            </button>
+          </div>
+          <div class="row-divider"></div>
+          <div class="row row-col">
+            <div class="row-text">
+              <label for="punct-min">短句免標點</label>
+              <p>低於這個字數的短句不加標點（中文算字、英文算單字）；拉到 0＝一律加標點</p>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="punct-min" class="slider" min="0" max="20" step="1" value="10">
+              <span class="slider-value mono" id="punct-min-value">10 字</span>
+            </div>
+          </div>
+          <div class="row-divider"></div>
+          <div class="row row-col">
+            <div class="row-text">
               <label for="mic-select">麥克風裝置</label>
               <p>選擇要用來收音的麥克風</p>
             </div>

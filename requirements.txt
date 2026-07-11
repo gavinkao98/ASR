@@ -1,0 +1,19 @@
+# setuptools<81：ctranslate2==4.4.0 的 __init__.py 在 import 時用 pkg_resources；
+# setuptools 81+ 移除了 pkg_resources，會導致 `import ctranslate2` 直接炸掉。鎖住舊版避免。
+setuptools==75.8.0
+faster-whisper==1.1.1
+ctranslate2==4.4.0
+nvidia-cublas-cu12~=12.4
+nvidia-cudnn-cu12==8.9.7.29
+sherpa-onnx>=1.11
+sounddevice>=0.5
+numpy>=1.26,<3
+keyboard==0.13.5
+pywin32>=306
+pystray>=0.19.5
+Pillow>=10
+pywebview>=5.1
+opencc-python-reimplemented==0.1.7
+huggingface_hub>=0.23
+requests>=2.31
+pytest>=8

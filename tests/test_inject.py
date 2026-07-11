@@ -35,6 +35,32 @@ def test_raw_bytes_roundtrip_registered_format():
     assert _peek_format(fmt) == payload
 
 
+def test_snapshot_collects_whitelisted_formats():
+    fmt_png = win32clipboard.RegisterClipboardFormat("PNG")
+    _put_formats([(win32con.CF_UNICODETEXT, "哈囉\0".encode("utf-16-le")),
+                  (fmt_png, b"png-bytes")])
+    items = dict(inject._snapshot_clipboard())
+    assert items[fmt_png] == b"png-bytes"
+    assert win32con.CF_UNICODETEXT in items
+
+
+def test_snapshot_skips_oversized_format_keeps_rest():
+    fmt_png = win32clipboard.RegisterClipboardFormat("PNG")
+    _put_formats([(win32con.CF_UNICODETEXT, "小\0".encode("utf-16-le")),
+                  (fmt_png, b"x" * 200)])
+    items = dict(inject._snapshot_clipboard(max_fmt_bytes=100))
+    assert fmt_png not in items          # 超過單格式上限 → 跳過
+    assert win32con.CF_UNICODETEXT in items  # 其他格式照常
+
+
+def test_snapshot_total_cap_stops_collecting():
+    fmt_png = win32clipboard.RegisterClipboardFormat("PNG")
+    fmt_html = win32clipboard.RegisterClipboardFormat("HTML Format")
+    _put_formats([(fmt_png, b"a" * 80), (fmt_html, b"b" * 80)])
+    items = inject._snapshot_clipboard(max_total_bytes=100)
+    assert len(items) == 1               # 收了第一個之後達總量上限即停
+
+
 def test_clipboard_roundtrip():
     _set_clipboard_text("測試123 English")
     assert _get_clipboard_text() == "測試123 English"

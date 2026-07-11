@@ -73,6 +73,61 @@ def _write_format_bytes(fmt: int, data: bytes) -> None:
         raise RuntimeError(f"SetClipboardData failed (format {fmt})")
 
 
+# ---- 備份格式白名單（spec：圖片＋檔案＋富文字＋純文字）----
+# 衍生格式（CF_TEXT/CF_OEMTEXT/CF_LOCALE←CF_UNICODETEXT、CF_BITMAP←CF_DIB）由
+# Windows 自動合成，不備不還。具名格式編號動態配發，執行期解析。
+_CF_DIBV5 = getattr(win32con, "CF_DIBV5", 17)
+_FIXED_FORMATS = (win32con.CF_UNICODETEXT, win32con.CF_DIB, _CF_DIBV5,
+                  win32con.CF_HDROP)
+_NAMED_FORMATS = ("PNG", "Preferred DropEffect", "HTML Format",
+                  "Rich Text Format")
+_MAX_FMT_BYTES = 64 * 1024 * 1024     # 單格式上限（4K 截圖 DIB ≈ 33MB 安全通過）
+_MAX_TOTAL_BYTES = 200 * 1024 * 1024  # 總量上限
+
+
+def _whitelist() -> set[int]:
+    ids = set(_FIXED_FORMATS)
+    for name in _NAMED_FORMATS:
+        ids.add(win32clipboard.RegisterClipboardFormat(name))
+    return ids
+
+
+def _snapshot_clipboard(max_fmt_bytes: int = _MAX_FMT_BYTES,
+                        max_total_bytes: int = _MAX_TOTAL_BYTES,
+                        ) -> list[tuple[int, bytes]] | None:
+    """把剪貼簿上白名單格式的原始位元組全部拷出。回傳依原列舉順序的
+    (format_id, bytes) 清單；重試後仍開不了剪貼簿回 None。"""
+    wanted = _whitelist()
+    for _ in range(_CLIP_RETRIES):
+        try:
+            win32clipboard.OpenClipboard()
+            try:
+                items: list[tuple[int, bytes]] = []
+                total = 0
+                fmt = win32clipboard.EnumClipboardFormats(0)
+                while fmt:
+                    if fmt in wanted:
+                        data = _read_format_bytes(fmt)
+                        if data is None:
+                            pass
+                        elif len(data) > max_fmt_bytes:
+                            log.warning("剪貼簿格式 %d 過大（%d bytes），略過",
+                                        fmt, len(data))
+                        elif total + len(data) > max_total_bytes:
+                            log.warning("剪貼簿備份達總量上限，其餘格式略過")
+                            break
+                        else:
+                            items.append((fmt, data))
+                            total += len(data)
+                    fmt = win32clipboard.EnumClipboardFormats(fmt)
+                return items
+            finally:
+                win32clipboard.CloseClipboard()
+        except Exception:  # noqa: BLE001 - 剪貼簿被鎖定等，重試
+            time.sleep(_CLIP_WAIT)
+    return None
+
+
 def _get_clipboard_text() -> str | None:
     for _ in range(_CLIP_RETRIES):  # 剪貼簿被其他程式短暫鎖定時重試
         try:

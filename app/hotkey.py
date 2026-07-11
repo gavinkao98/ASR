@@ -56,17 +56,26 @@ class HotkeyListener:
         self._cancel_hold_timer()
         keyboard.send(self._key)
 
+    def _on_key_event(self, e) -> None:
+        t = time.monotonic() * 1000
+        if e.event_type == keyboard.KEY_DOWN:
+            self._sm.key_down(t)
+        elif e.event_type == keyboard.KEY_UP:
+            self._sm.key_up(t)
+
     def start(self) -> None:
-        self._hooks.append(keyboard.on_press_key(
-            self._key, lambda e: self._sm.key_down(time.monotonic() * 1000),
-            suppress=True))
-        self._hooks.append(keyboard.on_release_key(
-            self._key, lambda e: self._sm.key_up(time.monotonic() * 1000),
-            suppress=True))
+        # 用單一 hook_key（同時收 down/up）而非 on_press_key + on_release_key 兩個 hook：
+        # 後者對同一個鍵在 keyboard 套件內部共用同一個 key 條目，解除第二個時會丟
+        # KeyError，害「結束/暫停」在真正退出前中斷、hook 殘留、CapsLock 被卡住。
+        self._hooks.append(
+            keyboard.hook_key(self._key, self._on_key_event, suppress=True))
         log.info("hotkey armed: %s", self._key)
 
     def stop(self) -> None:
         self._cancel_hold_timer()
         for h in self._hooks:
-            keyboard.unhook(h)
+            try:
+                keyboard.unhook(h)
+            except (KeyError, ValueError):  # 保險：keyboard 解除偶發重複刪同一 key
+                pass
         self._hooks = []

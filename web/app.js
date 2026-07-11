@@ -771,6 +771,7 @@
       var flash = document.createElement('span');
       flash.className = 'history-copied-flash';
       flash.textContent = '已複製';
+      flash.setAttribute('aria-hidden', 'true'); /* 視覺提示用，避免螢幕報讀器在每一列都唸出「已複製」 */
 
       btn.appendChild(time);
       btn.appendChild(badge);

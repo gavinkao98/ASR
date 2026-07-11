@@ -20,7 +20,7 @@ VAD_URL = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/"
            "asr-models/silero_vad.onnx")
 BREEZE_REPOS = ["SoybeanMilk/faster-whisper-Breeze-ASR-25",
                 "phate334/Breeze-ASR-25-ct2"]
-QWEN3_REPO = "HaujetZhao/Qwen3-ASR-GGUF"
+QWEN3_GGUF_REPO = "ggml-org/Qwen3-ASR-1.7B-GGUF"  # 官方 llama.cpp 專用 GGUF（Q8_0）
 LLAMACPP_REPO = "ggml-org/llama.cpp"
 
 
@@ -85,35 +85,40 @@ def _github_release_assets(repo: str) -> list[dict]:
     return r.json()["assets"]
 
 
+def _download_and_extract(url: str, cb: ProgressCb, label: str) -> None:
+    tmp = paths.MODELS_DIR / "llama_dl.zip"
+    _stream_download(url, tmp, cb, label)
+    with zipfile.ZipFile(tmp) as z:
+        z.extractall(paths.LLAMA_SERVER_DIR)  # 各 zip 檔都攤在根目錄，合併到同一層
+    tmp.unlink()
+
+
 def download_qwen3(cb: ProgressCb, use_gpu: bool = True) -> None:
-    assets = _github_release_assets(QWEN3_REPO)
+    # 1) 模型：官方 ggml GGUF（Q8_0 主模型 + mmproj 音訊投影）；走 HF snapshot，已存在會略過。
+    from huggingface_hub import snapshot_download
+    cb(0.0, "下載 Qwen3-ASR GGUF 模型")
+    snapshot_download(repo_id=QWEN3_GGUF_REPO, local_dir=paths.QWEN3_DIR,
+                      allow_patterns=["*Q8_0*"])
+
+    # 2) llama-server（Windows）：GPU→CUDA 12.4，否則→Vulkan（免 CUDA、通吃各家顯卡）。
+    assets = _github_release_assets(LLAMACPP_REPO)
     names = [a["name"] for a in assets]
     by_name = {a["name"]: a["browser_download_url"] for a in assets}
+    if use_gpu:
+        server = pick_asset(names, ["llama-*-bin-win-cuda-12.4-x64.zip", "*win-cuda*x64*.zip"])
+    else:
+        server = pick_asset(names, ["llama-*-bin-win-vulkan-x64.zip", "*win-cpu*x64*.zip"])
+    if not server:
+        raise RuntimeError(f"找不到 llama-server Windows 包，實際資產：{names}")
+    _download_and_extract(by_name[server], cb, "下載 llama-server")
 
-    model = pick_asset(names, ["*q8_0.gguf", "*q4*.gguf"])
-    mmproj = pick_asset(names, ["mmproj*.gguf"])
-    if not model or not mmproj:
-        raise RuntimeError(f"在 {QWEN3_REPO} release 找不到 GGUF 資產，實際資產：{names}")
-    _stream_download(by_name[model], paths.QWEN3_DIR / model, cb, "下載 Qwen3 模型")
-    _stream_download(by_name[mmproj], paths.QWEN3_DIR / mmproj, cb, "下載 Qwen3 mmproj")
-
-    server_pats = (["*win-cuda*x64*.zip", "*win-cuda*.zip"] if use_gpu
-                   else ["*win-cpu*x64*.zip", "*win-vulkan*x64*.zip"])
-    server = pick_asset(names, server_pats)
-    server_url = by_name.get(server) if server else None
-    if not server_url:  # 該 repo 沒附 → 到 llama.cpp 官方 release 拿
-        assets = _github_release_assets(LLAMACPP_REPO)
-        names = [a["name"] for a in assets]
-        by_name = {a["name"]: a["browser_download_url"] for a in assets}
-        server = pick_asset(names, server_pats)
-        if not server:
-            raise RuntimeError(f"找不到 llama-server Windows 包，實際資產：{names}")
-        server_url = by_name[server]
-    tmp = paths.MODELS_DIR / "llama-server.zip"
-    _stream_download(server_url, tmp, cb, "下載 llama-server")
-    with zipfile.ZipFile(tmp) as z:
-        z.extractall(paths.LLAMA_SERVER_DIR)
-    tmp.unlink()
+    # 3) CUDA runtime（cudart/cublas）：CUDA 版 llama-server 需要，解到與 exe 同目錄才載得到。
+    if use_gpu:
+        cudart = pick_asset(names, ["cudart-llama-bin-win-cuda-12.4-x64.zip", "cudart-*cuda*x64.zip"])
+        if not cudart:
+            raise RuntimeError(f"找不到 cudart 包，實際資產：{names}")
+        _download_and_extract(by_name[cudart], cb, "下載 CUDA runtime")
+    cb(1.0, "Qwen3-ASR 就緒")
 
 
 def breeze_ready() -> bool:

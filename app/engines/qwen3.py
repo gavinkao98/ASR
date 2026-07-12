@@ -23,11 +23,6 @@ log = get_logger("qwen3")
 # ≈ 1,600 tokens，4096 含輸出仍有兩倍餘裕。
 _CTX_SIZE = 4096
 
-# 辨識指令：Qwen3-ASR 念數字時偏好國字（「四零九六」），加一句引導改吐阿拉伯數字。
-# 這是「引導」不是「保證」——ASR 對文字指令的遵循度有限，效果需實機驗證；此常數
-# 獨立抽出方便微調。若引導不足以穩定，改走後處理確定性轉換（見 postprocess）。
-_ASR_PROMPT = "請轉錄這段音訊，數字請用阿拉伯數字書寫。"
-
 
 def _build_cmd(exe, model, mmproj, port: int, *, use_gpu: bool) -> list[str]:
     cmd = [str(exe), "-m", str(model), "--mmproj", str(mmproj),
@@ -166,7 +161,7 @@ class Qwen3Engine(Engine):
                     {"type": "input_audio",
                      "input_audio": {"data": _to_wav_b64(samples, rate),
                                      "format": "wav"}},
-                    {"type": "text", "text": _ASR_PROMPT},
+                    {"type": "text", "text": "請轉錄這段音訊。"},
                 ],
             }],
             "temperature": temperature,

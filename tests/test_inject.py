@@ -132,6 +132,29 @@ def test_guard_empty_clipboard_keeps_pasted_text():
     assert _get_clipboard_text() == "辨識結果"  # 維持現行為：辨識文字留著（手動 Ctrl+V 退路）
 
 
+def test_inject_falls_back_to_typing_when_clipboard_locked(monkeypatch):
+    """剪貼簿被鎖（剪貼簿歷程/防毒長時間占用）時不整次失敗：改逐字輸入送出。
+    實案：asr.log 10:04 三次「無法寫入剪貼簿」，辨識全對卻顯示處理失敗。"""
+    typed, pasted = [], []
+    monkeypatch.setattr(inject, "_set_clipboard_text",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked")))
+    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: typed.append(t))
+    monkeypatch.setattr(inject.keyboard, "send", lambda *a: pasted.append(a))
+    assert inject.inject_text("四零九六", "clipboard") is True
+    assert typed == ["四零九六"]   # 文字仍送達
+    assert pasted == []            # Ctrl+V 沒有發（剪貼簿路線放棄）
+
+
+def test_set_clipboard_error_reports_cause(monkeypatch):
+    """重試耗盡時要帶出最後一次的底層錯誤，不能只說「無法寫入」。"""
+    monkeypatch.setattr(inject, "_CLIP_RETRIES", 2)
+    monkeypatch.setattr(inject, "_CLIP_WAIT", 0)
+    monkeypatch.setattr(inject.win32clipboard, "OpenClipboard",
+                        lambda *a: (_ for _ in ()).throw(ValueError("boom-cause")))
+    with pytest.raises(RuntimeError, match="boom-cause"):
+        _set_clipboard_text("x")
+
+
 def test_clipboard_roundtrip():
     _set_clipboard_text("測試123 English")
     assert _get_clipboard_text() == "測試123 English"

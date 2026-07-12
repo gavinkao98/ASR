@@ -98,6 +98,7 @@ def _snapshot_clipboard(max_fmt_bytes: int = _MAX_FMT_BYTES,
     """把剪貼簿上白名單格式的原始位元組全部拷出。回傳依原列舉順序的
     (format_id, bytes) 清單；重試後仍開不了剪貼簿回 None。"""
     wanted = _whitelist()
+    err: Exception | None = None
     for _ in range(_CLIP_RETRIES):
         try:
             win32clipboard.OpenClipboard()
@@ -123,13 +124,16 @@ def _snapshot_clipboard(max_fmt_bytes: int = _MAX_FMT_BYTES,
                 return items
             finally:
                 win32clipboard.CloseClipboard()
-        except Exception:  # noqa: BLE001 - 剪貼簿被鎖定等，重試
+        except Exception as e:  # noqa: BLE001 - 剪貼簿被鎖定等，重試
+            err = e
             time.sleep(_CLIP_WAIT)
+    log.warning("剪貼簿快照失敗（最後錯誤：%r），退回純文字備份", err)
     return None
 
 
 def _restore_clipboard(items: list[tuple[int, bytes]]) -> None:
     """清空剪貼簿後把快照逐格式原樣放回（依快照順序＝原擁有者的優先順序）。"""
+    err: Exception | None = None
     for _ in range(_CLIP_RETRIES):
         try:
             win32clipboard.OpenClipboard()
@@ -140,9 +144,10 @@ def _restore_clipboard(items: list[tuple[int, bytes]]) -> None:
                 return
             finally:
                 win32clipboard.CloseClipboard()
-        except Exception:  # noqa: BLE001 - 每輪從 Empty 重來，重試安全
+        except Exception as e:  # noqa: BLE001 - 每輪從 Empty 重來，重試安全
+            err = e
             time.sleep(_CLIP_WAIT)
-    raise RuntimeError("無法還原剪貼簿")
+    raise RuntimeError(f"無法還原剪貼簿（最後錯誤：{err!r}）")
 
 
 def _get_clipboard_text() -> str | None:
@@ -161,6 +166,7 @@ def _get_clipboard_text() -> str | None:
 
 
 def _set_clipboard_text(text: str) -> None:
+    err: Exception | None = None
     for _ in range(_CLIP_RETRIES):
         try:
             win32clipboard.OpenClipboard()
@@ -170,9 +176,10 @@ def _set_clipboard_text(text: str) -> None:
                 return
             finally:
                 win32clipboard.CloseClipboard()
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            err = e
             time.sleep(_CLIP_WAIT)
-    raise RuntimeError("無法寫入剪貼簿")
+    raise RuntimeError(f"無法寫入剪貼簿（最後錯誤：{err!r}）")
 
 
 class ClipboardGuard:
@@ -211,11 +218,17 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
         if mode == "type":
             keyboard.write(text, delay=0.002)
             return True
-        with ClipboardGuard():
-            _set_clipboard_text(text)
-            time.sleep(0.05)           # 讓剪貼簿寫入落定
-            keyboard.send("ctrl+v")
-            time.sleep(0.2)            # 給目標視窗抓走內容的時間；離開時的還原會重試撐過鎖定
+        try:
+            with ClipboardGuard():
+                _set_clipboard_text(text)
+                time.sleep(0.05)       # 讓剪貼簿寫入落定
+                keyboard.send("ctrl+v")
+                time.sleep(0.2)        # 給目標視窗抓走內容的時間；離開時的還原會重試撐過鎖定
+        except RuntimeError as e:
+            # 剪貼簿被其他程式長時間鎖住（剪貼簿歷程/防毒都會在內容變動後搶開來讀）。
+            # 寫不進就不硬撐：改逐字輸入，文字一樣送達，不再回報「處理失敗」。
+            log.warning("剪貼簿寫入失敗（%s），改用逐字輸入送出", e)
+            keyboard.write(text, delay=0.002)
         return True
     except Exception:  # noqa: BLE001
         log.exception("inject failed")

@@ -1,6 +1,7 @@
 import re
 from typing import Callable
 
+from app.postprocess.digits import to_arabic
 from app.postprocess.hotwords import apply_rules, load_rules
 from app.postprocess.normalize import normalize_punct
 from app.postprocess.tradify import to_taiwan
@@ -25,7 +26,8 @@ def _strip_sentence_punct(text: str) -> str:
 def build_chain(*, has_punct: bool, outputs_simplified: bool,
                 use_punct_model: bool, punct_fn: Callable[[str], str],
                 hotwords_path, verbatim: bool = False,
-                punct_min_chars: int = 0) -> Callable[[str], str]:
+                punct_min_chars: int = 0,
+                digits_to_arabic: bool = True) -> Callable[[str], str]:
     def run(text: str) -> str:
         text = text.strip()
         if not text:
@@ -43,6 +45,9 @@ def build_chain(*, has_punct: bool, outputs_simplified: bool,
             # 原樣輸出：保留自動標點與簡轉繁，但跳過熱詞替換與全形標點正規化，
             # 盡量照抄辨識模型吐出的文字（模型本身的語句整理無法在此關閉）。
             return text
+        if digits_to_arabic:
+            # 位置：簡→繁之後（digits 的字集是繁體）、熱詞之前（熱詞可反向覆蓋）
+            text = to_arabic(text)
         text = apply_rules(text, load_rules(hotwords_path))  # 每次重讀＝即存即生效
         return normalize_punct(text)
 

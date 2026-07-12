@@ -27,6 +27,30 @@ def test_punct_model_skipped_when_disabled(tmp_path):
     assert chain("測試") == "測試"
 
 
+def test_chain_converts_digits_after_tradify_before_hotwords(tmp_path):
+    # 數字轉換在鏈內：簡→繁之後、熱詞之前（熱詞規則寫「4096=四零九六」可反向覆蓋）
+    chain = build_chain(has_punct=True, outputs_simplified=True,
+                        use_punct_model=True, punct_fn=fake_punct,
+                        hotwords_path=tmp_path / "none.txt")
+    assert chain("之前沒加入四零九六，我有十二GB的顯示卡。") \
+        == "之前沒加入4096，我有12GB的顯示卡。"
+
+
+def test_chain_digits_disabled_by_flag(tmp_path):
+    chain = build_chain(has_punct=True, outputs_simplified=False,
+                        use_punct_model=True, punct_fn=fake_punct,
+                        hotwords_path=tmp_path / "none.txt",
+                        digits_to_arabic=False)
+    assert chain("四零九六") == "四零九六"
+
+
+def test_verbatim_skips_digits(tmp_path):
+    chain = build_chain(has_punct=True, outputs_simplified=False,
+                        use_punct_model=True, punct_fn=fake_punct,
+                        hotwords_path=tmp_path / "none.txt", verbatim=True)
+    assert chain("四零九六") == "四零九六"
+
+
 def test_verbatim_keeps_punct_but_skips_hotwords_and_normalize(tmp_path):
     # 原樣輸出：保留自動標點（fake_punct 補「。」），但不套熱詞（派森不變）、不做全形正規化
     hw = tmp_path / "hotwords.txt"

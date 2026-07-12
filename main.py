@@ -144,6 +144,8 @@ class App:
                           on_open_settings=self.on_open_settings, on_quit=on_quit)
 
         def boot():
+            from app.inject import warm_clipboard_helper
+            warm_clipboard_helper()  # 替身冷啟 ~0.8s（含防毒掃描），開機先付掉
             try:
                 self.engines.switch(cfg["engine"])   # 背景載入（10 秒級）
                 self.tray.notify(f"引擎 {cfg['engine']} 就緒，按住 {cfg['hotkey']} 說話")

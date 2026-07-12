@@ -1,86 +1,39 @@
-"""文字注入：預設剪貼簿+Ctrl+V；備選逐字打字。貼完還原原剪貼簿文字。
-限制：只備份/還原「文字」內容；原剪貼簿若是圖片等非文字格式，無法還原（記入 README）。"""
+"""文字注入：預設剪貼簿+Ctrl+V（剪貼簿操作全委由常駐「替身」子行程），備選逐字輸入。
+
+為什麼要替身：主行程內的 API 攔截層（防毒注入 DLL）會在 SetClipboardData 呼叫中
+造成 heap 損毀（0xc0000374，crash dump×4＋faulthandler×4＋heapprobe 交叉定罪）。
+剪貼簿讀寫全部移進拋棄式子行程（app/clipboard_helper.py）後，攔截層再出事死的是
+替身——主行程收屍重生即可。替身常駐（冷啟含防毒掃描實測 ~0.8s，只在預熱時付一次）。
+
+逐字輸入（type 模式/退路）用單批 SendInput：整句原子性進輸入佇列。注意中文輸入法
+仍可能把注入字元抓進組字緩衝造成標點錯位（跨行程無解），故剪貼簿模式為預設。
+"""
+import base64
 import ctypes
+import subprocess
+import sys
+import threading
 import time
 from ctypes import wintypes
+from pathlib import Path
 
 import keyboard
-import win32clipboard
-import win32con
 
-from app.logger import get_logger
+from app.logger import get_logger, log_dir
 
 log = get_logger("inject")
 
-# 目標視窗在貼上的瞬間會獨佔開啟剪貼簿讀取內容；還原時多重試幾次撐過那段鎖定，避免把
-# 使用者原本複製的東西洗掉（這正是「常常覆蓋掉之前複製內容」的成因）。OpenClipboard 是
-# 獨佔的：一直重試到搶得到＝目標視窗已讀完，順序天然正確。最多 20 × 0.05 ≈ 1 秒。
-_CLIP_RETRIES = 20
-_CLIP_WAIT = 0.05
-
-# ---- Win32 全域記憶體原始位元組讀寫（多格式備份的底層）----
-_kernel32 = ctypes.windll.kernel32
-_user32 = ctypes.windll.user32
-_kernel32.GlobalSize.restype = ctypes.c_size_t
-_kernel32.GlobalSize.argtypes = [wintypes.HGLOBAL]
-_kernel32.GlobalLock.restype = wintypes.LPVOID
-_kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
-_kernel32.GlobalUnlock.restype = wintypes.BOOL
-_kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
-_kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
-_kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
-_kernel32.GlobalFree.restype = wintypes.HGLOBAL
-_kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
-_user32.GetClipboardData.restype = wintypes.HANDLE
-_user32.GetClipboardData.argtypes = [wintypes.UINT]
-_user32.SetClipboardData.restype = wintypes.HANDLE
-_user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
-_GMEM_MOVEABLE = 0x0002
-
-
-def _read_format_bytes(fmt: int) -> bytes | None:
-    """讀出剪貼簿上某格式的整塊原始位元組。呼叫前剪貼簿必須已 Open。
-    非 HGLOBAL 格式或空資料回 None（白名單外的格式不會走到這裡）。"""
-    h = _user32.GetClipboardData(fmt)
-    if not h:
-        return None
-    size = _kernel32.GlobalSize(h)
-    if not size:
-        return None
-    ptr = _kernel32.GlobalLock(h)
-    if not ptr:
-        return None
-    try:
-        return ctypes.string_at(ptr, size)
-    finally:
-        _kernel32.GlobalUnlock(h)
-
-
-def _write_format_bytes(fmt: int, data: bytes) -> None:
-    """把位元組原樣放回剪貼簿某格式。呼叫前剪貼簿必須已 Open。
-    SetClipboardData 成功後記憶體歸系統所有；失敗才由我們 GlobalFree。"""
-    h = _kernel32.GlobalAlloc(_GMEM_MOVEABLE, len(data))
-    if not h:
-        raise MemoryError("GlobalAlloc failed")
-    ptr = _kernel32.GlobalLock(h)
-    if not ptr:
-        _kernel32.GlobalFree(h)
-        raise MemoryError("GlobalLock failed")
-    ctypes.memmove(ptr, data, len(data))
-    _kernel32.GlobalUnlock(h)
-    if not _user32.SetClipboardData(fmt, h):
-        _kernel32.GlobalFree(h)
-        raise RuntimeError(f"SetClipboardData failed (format {fmt})")
-
-
 # ---- 逐字輸入：單批 SendInput（VK_PACKET unicode）----
-# keyboard.write 逐字慢送（每字一次呼叫＋延遲）會與中文輸入法的非同步處理交錯：
-# CJK 直接通過、全形標點被抓進組字緩衝，稍後整團吐出 → 標點錯位（實案「，，。」擠團）。
-# 整句打包成一次 SendInput 原子性進輸入佇列即可避免，且長句即刻出字。
+# keyboard.write 逐字慢送會與中文輸入法非同步處理交錯（標點錯位「，，。」擠團），
+# 整句打包成一次 SendInput 可消除我方送入側的空隙，且長句即刻出字。
 _INPUT_KEYBOARD = 1
 _KEYEVENTF_KEYUP = 0x0002
 _KEYEVENTF_UNICODE = 0x0004
 _VK_RETURN = 0x0D
+
+_user32 = ctypes.windll.user32
+_user32.SendInput.restype = wintypes.UINT
+_user32.SendInput.argtypes = [wintypes.UINT, ctypes.c_void_p, ctypes.c_int]
 
 
 class _KEYBDINPUT(ctypes.Structure):
@@ -97,12 +50,8 @@ class _INPUT(ctypes.Structure):
     _fields_ = (("type", wintypes.DWORD), ("u", _U))
 
 
-_user32.SendInput.restype = wintypes.UINT
-_user32.SendInput.argtypes = [wintypes.UINT, ctypes.c_void_p, ctypes.c_int]
-
-
 def _utf16_units(text: str) -> list[int]:
-    """展開為 UTF-16 編碼單元（BMP 一單元；增補平面代理對兩單元，Windows 會自行重組）。"""
+    """展開為 UTF-16 編碼單元（BMP 一單元；增補平面代理對兩單元，Windows 自行重組）。"""
     b = text.encode("utf-16-le")
     return [int.from_bytes(b[i:i + 2], "little") for i in range(0, len(b), 2)]
 
@@ -140,154 +89,100 @@ def _type_text(text: str) -> None:
             _send_unicode_batch(_utf16_units(seg))
 
 
-# ---- 備份格式白名單（spec：圖片＋檔案＋富文字＋純文字）----
-# 衍生格式（CF_TEXT/CF_OEMTEXT/CF_LOCALE←CF_UNICODETEXT、CF_BITMAP←CF_DIB）由
-# Windows 自動合成，不備不還。具名格式編號動態配發，執行期解析。
-_CF_DIBV5 = getattr(win32con, "CF_DIBV5", 17)
-_FIXED_FORMATS = (win32con.CF_UNICODETEXT, win32con.CF_DIB, _CF_DIBV5,
-                  win32con.CF_HDROP)
-_NAMED_FORMATS = ("PNG", "Preferred DropEffect", "HTML Format",
-                  "Rich Text Format")
-_MAX_FMT_BYTES = 64 * 1024 * 1024     # 單格式上限（4K 截圖 DIB ≈ 33MB 安全通過）
-_MAX_TOTAL_BYTES = 200 * 1024 * 1024  # 總量上限
-
-
-def _whitelist() -> set[int]:
-    ids = set(_FIXED_FORMATS)
-    for name in _NAMED_FORMATS:
-        ids.add(win32clipboard.RegisterClipboardFormat(name))
-    return ids
-
-
-def _snapshot_clipboard(max_fmt_bytes: int = _MAX_FMT_BYTES,
-                        max_total_bytes: int = _MAX_TOTAL_BYTES,
-                        ) -> list[tuple[int, bytes]] | None:
-    """把剪貼簿上白名單格式的原始位元組全部拷出。回傳依原列舉順序的
-    (format_id, bytes) 清單；重試後仍開不了剪貼簿回 None。"""
-    wanted = _whitelist()
-    err: Exception | None = None
-    for _ in range(_CLIP_RETRIES):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                items: list[tuple[int, bytes]] = []
-                total = 0
-                fmt = win32clipboard.EnumClipboardFormats(0)
-                while fmt:
-                    if fmt in wanted:
-                        data = _read_format_bytes(fmt)
-                        if data is None:
-                            pass
-                        elif len(data) > max_fmt_bytes:
-                            log.warning("剪貼簿格式 %d 過大（%d bytes），略過",
-                                        fmt, len(data))
-                        elif total + len(data) > max_total_bytes:
-                            log.warning("剪貼簿備份達總量上限，其餘格式略過")
-                            break
-                        else:
-                            items.append((fmt, data))
-                            total += len(data)
-                    fmt = win32clipboard.EnumClipboardFormats(fmt)
-                return items
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:  # noqa: BLE001 - 剪貼簿被鎖定等，重試
-            err = e
-            time.sleep(_CLIP_WAIT)
-    log.warning("剪貼簿快照失敗（最後錯誤：%r），退回純文字備份", err)
-    return None
-
-
-def _restore_clipboard(items: list[tuple[int, bytes]]) -> None:
-    """清空剪貼簿後把快照逐格式原樣放回（依快照順序＝原擁有者的優先順序）。"""
-    err: Exception | None = None
-    for _ in range(_CLIP_RETRIES):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-                for fmt, data in items:
-                    _write_format_bytes(fmt, data)
-                return
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:  # noqa: BLE001 - 每輪從 Empty 重來，重試安全
-            err = e
-            time.sleep(_CLIP_WAIT)
-    raise RuntimeError(f"無法還原剪貼簿（最後錯誤：{err!r}）")
-
-
-def _get_clipboard_text() -> str | None:
-    for _ in range(_CLIP_RETRIES):  # 剪貼簿被其他程式短暫鎖定時重試
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                if win32clipboard.IsClipboardFormatAvailable(win32con.CF_UNICODETEXT):
-                    return win32clipboard.GetClipboardData(win32con.CF_UNICODETEXT)
-                return None
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception:  # noqa: BLE001
-            time.sleep(_CLIP_WAIT)
-    return None
-
-
-def _set_clipboard_text(text: str) -> None:
-    err: Exception | None = None
-    for _ in range(_CLIP_RETRIES):
-        try:
-            win32clipboard.OpenClipboard()
-            try:
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
-                return
-            finally:
-                win32clipboard.CloseClipboard()
-        except Exception as e:  # noqa: BLE001
-            err = e
-            time.sleep(_CLIP_WAIT)
-    raise RuntimeError(f"無法寫入剪貼簿（最後錯誤：{err!r}）")
+# ---- 剪貼簿替身編排 ----
+_HELPER_PATH = Path(__file__).with_name("clipboard_helper.py")
 
 
 def _multiformat_enabled() -> bool:
-    """多格式還原總開關（config: clipboard_multiformat，預設關）。
-    2026-07-12 兩份 crash dump 證實 0xc0000374 heap 損毀於 win32clipboard→user32
-    呼叫中引爆，多格式快照/還原循環為觸發面（合成內容測不出、真實富內容＋
-    並行讀者會中）。隔離待完整 dump 定位根因；設 True 可重新啟用參與獵殺。"""
+    """多格式（圖片/檔案/富文字）快照還原開關（config: clipboard_multiformat，預設開）。
+    操作已隔離於替身行程，最壞情況＝該輪還原失敗記警告，主行程與貼上結果無損。"""
     try:
         from app import config
-        return bool(config.load().get("clipboard_multiformat", False))
-    except Exception:  # noqa: BLE001 - 設定讀不到就走安全路徑
-        return False
+        return bool(config.load().get("clipboard_multiformat", True))
+    except Exception:  # noqa: BLE001 - 設定讀不到就走最保守（仍可還原文字）
+        return True
 
 
-class ClipboardGuard:
-    """進入時備份剪貼簿、離開時還原；還原重試撐過目標視窗的短暫鎖定。
-    多格式模式（圖片/檔案/富文字位元組級快照）由 _multiformat_enabled 控制，
-    預設關閉（穩定性隔離），關閉或快照失敗都退回純文字備份——備份問題絕不
-    擋住貼上。原剪貼簿為空時不還原（辨識文字留在剪貼簿，保留手動 Ctrl+V 退路）。"""
+class _HelperClient:
+    """常駐替身的生命週期與協議（READY/RESTORE/DONE）。僅由 pipeline 單一執行緒使用；
+    任何異常一律收屍，下次使用自動重生。"""
 
-    def __enter__(self):
-        self._items: list[tuple[int, bytes]] | None = None
-        self._text: str | None = None
-        if _multiformat_enabled():
-            try:
-                self._items = _snapshot_clipboard()
-            except Exception:  # noqa: BLE001
-                log.warning("多格式快照失敗，退回純文字備份", exc_info=True)
-        if self._items is None:
-            self._text = _get_clipboard_text()
-        return self
+    def __init__(self):
+        self._proc: subprocess.Popen | None = None
 
-    def __exit__(self, *exc):
+    def _ensure(self) -> bool:
+        if self._proc is not None and self._proc.poll() is None:
+            return True
         try:
-            if self._items:
-                _restore_clipboard(self._items)
-            elif self._items is None and self._text is not None:
-                _set_clipboard_text(self._text)
-        except RuntimeError:
-            log.warning("還原剪貼簿失敗")
+            logf = (log_dir() / "cliphelper.log").open("ab")
+            try:
+                self._proc = subprocess.Popen(
+                    [sys.executable, "-S", "-E", str(_HELPER_PATH)],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=logf,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+            finally:
+                logf.close()  # 子行程已繼承 handle
+            return True
+        except Exception:  # noqa: BLE001
+            log.exception("剪貼簿替身啟動失敗")
+            self._proc = None
+            return False
+
+    def _read_line(self, timeout: float) -> bytes | None:
+        proc = self._proc
+        box: list[bytes] = []
+        t = threading.Thread(target=lambda: box.append(proc.stdout.readline()),
+                             daemon=True)
+        t.start()
+        t.join(timeout)
+        return box[0].strip() if box else None
+
+    def kill(self) -> None:
+        if self._proc is not None:
+            try:
+                self._proc.kill()
+            except Exception:  # noqa: BLE001
+                pass
+            self._proc = None
+
+    def begin(self, text: str, multiformat: bool) -> bool:
+        """替身快照原剪貼簿＋寫入新文字；True＝可送 Ctrl+V。失敗自動收屍。"""
+        if not self._ensure():
+            return False
+        try:
+            flag = b"1" if multiformat else b"0"
+            payload = base64.b64encode(text.encode("utf-8"))
+            self._proc.stdin.write(flag + b" " + payload + b"\n")
+            self._proc.stdin.flush()
+            if self._read_line(3.0) == b"READY":
+                return True
+            log.warning("替身未回 READY（逾時或暴斃）")
+        except Exception:  # noqa: BLE001
+            log.exception("替身通訊失敗")
+        self.kill()
         return False
+
+    def finish(self) -> None:
+        """貼上完成後請替身還原原剪貼簿；失敗僅記警告（貼上已完成、不影響結果）。"""
+        if self._proc is None:
+            return
+        try:
+            self._proc.stdin.write(b"RESTORE\n")
+            self._proc.stdin.flush()
+            if self._read_line(3.0) != b"DONE":
+                log.warning("替身還原逾時/失敗（貼上不受影響）")
+                self.kill()
+        except Exception:  # noqa: BLE001
+            log.warning("替身還原通訊失敗（貼上不受影響）", exc_info=True)
+            self.kill()
+
+
+_helper = _HelperClient()
+
+
+def warm_clipboard_helper() -> None:
+    """App 啟動時預熱替身：冷啟（含防毒掃描）實測 ~0.8 秒，先在背景付掉。"""
+    threading.Thread(target=_helper._ensure, daemon=True).start()
 
 
 def inject_text(text: str, mode: str = "clipboard") -> bool:
@@ -298,25 +193,21 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
         if mode == "type":
             _type_text(text)
             return True
-        from app.heapprobe import checkpoint  # 0xc0000374 排查探針，結案後移除
-        try:
-            with ClipboardGuard():
-                checkpoint("剪貼簿寫入前")
-                _set_clipboard_text(text)
-                checkpoint("剪貼簿寫入後")
-                time.sleep(0.05)       # 讓剪貼簿寫入落定
-                keyboard.send("ctrl+v")
-                time.sleep(0.2)        # 給目標視窗抓走內容的時間；離開時的還原會重試撐過鎖定
-        except RuntimeError as e:
-            # 剪貼簿被其他程式長時間鎖住（剪貼簿歷程/防毒都會在內容變動後搶開來讀）。
-            # 寫不進就不硬撐：改逐字輸入，文字一樣送達，不再回報「處理失敗」。
-            log.warning("剪貼簿寫入失敗（%s），改用逐字輸入送出", e)
+        from app.heapprobe import checkpoint  # 0xc0000374 觀察期探針
+        if _helper.begin(text, _multiformat_enabled()):
+            checkpoint("替身備妥後")
+            keyboard.send("ctrl+v")
+            time.sleep(0.2)   # 給目標視窗抓走內容的時間
+            _helper.finish()
+            checkpoint("替身還原後")
+        else:
+            # 替身不可用：逐字輸出，文字一樣送達（標點可能受輸入法影響，聊勝於失敗）
+            log.warning("剪貼簿替身不可用，改逐字輸出")
             _type_text(text)
         return True
     except Exception:  # noqa: BLE001
         log.exception("inject failed")
-        try:
-            _set_clipboard_text(text)  # 失敗保底：至少把文字留在剪貼簿
-        except RuntimeError:
-            pass
+        # 收掉可能卡在等 RESTORE 的替身：其 EOF 語意會把辨識文字留在剪貼簿，
+        # 保留「手動 Ctrl+V」退路（等同舊版失敗保底）。
+        _helper.kill()
         return False

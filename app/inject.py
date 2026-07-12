@@ -182,19 +182,32 @@ def _set_clipboard_text(text: str) -> None:
     raise RuntimeError(f"無法寫入剪貼簿（最後錯誤：{err!r}）")
 
 
+def _multiformat_enabled() -> bool:
+    """多格式還原總開關（config: clipboard_multiformat，預設關）。
+    2026-07-12 兩份 crash dump 證實 0xc0000374 heap 損毀於 win32clipboard→user32
+    呼叫中引爆，多格式快照/還原循環為觸發面（合成內容測不出、真實富內容＋
+    並行讀者會中）。隔離待完整 dump 定位根因；設 True 可重新啟用參與獵殺。"""
+    try:
+        from app import config
+        return bool(config.load().get("clipboard_multiformat", False))
+    except Exception:  # noqa: BLE001 - 設定讀不到就走安全路徑
+        return False
+
+
 class ClipboardGuard:
-    """進入時把剪貼簿白名單格式（文字/圖片/檔案/富文字）原始位元組全部快照，
-    離開時原樣還原；還原重試撐過目標視窗的短暫鎖定。快照失敗退回只備份文字的
-    舊行為——備份問題絕不擋住貼上。原剪貼簿為空時不還原（辨識文字留在剪貼簿，
-    保留「貼不進管理員視窗時手動 Ctrl+V」的退路）。"""
+    """進入時備份剪貼簿、離開時還原；還原重試撐過目標視窗的短暫鎖定。
+    多格式模式（圖片/檔案/富文字位元組級快照）由 _multiformat_enabled 控制，
+    預設關閉（穩定性隔離），關閉或快照失敗都退回純文字備份——備份問題絕不
+    擋住貼上。原剪貼簿為空時不還原（辨識文字留在剪貼簿，保留手動 Ctrl+V 退路）。"""
 
     def __enter__(self):
         self._items: list[tuple[int, bytes]] | None = None
         self._text: str | None = None
-        try:
-            self._items = _snapshot_clipboard()
-        except Exception:  # noqa: BLE001
-            log.warning("多格式快照失敗，退回純文字備份", exc_info=True)
+        if _multiformat_enabled():
+            try:
+                self._items = _snapshot_clipboard()
+            except Exception:  # noqa: BLE001
+                log.warning("多格式快照失敗，退回純文字備份", exc_info=True)
         if self._items is None:
             self._text = _get_clipboard_text()
         return self

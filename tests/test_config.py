@@ -14,6 +14,7 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg["verbatim"] is False
     assert cfg["punct_min_chars"] == 10
     assert cfg["digits_to_arabic"] is True
+    assert cfg["clipboard_multiformat"] is False  # 0xc0000374 排查期間預設關閉
 
 
 def test_save_and_reload_merge(tmp_path, monkeypatch):

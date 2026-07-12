@@ -73,13 +73,26 @@ def test_snapshot_then_restore_roundtrip():
     assert _get_clipboard_text() == "原文"
 
 
+def test_guard_multiformat_off_by_default_restores_text_only(monkeypatch):
+    """隔離措施：多格式還原預設關閉（0xc0000374 排查中），退回純文字備份。"""
+    monkeypatch.setattr(inject, "_multiformat_enabled", lambda: False, raising=False)
+    fmt_png = win32clipboard.RegisterClipboardFormat("PNG")
+    _put_formats([(win32con.CF_UNICODETEXT, "原字\0".encode("utf-16-le")),
+                  (fmt_png, b"img")])
+    with ClipboardGuard():
+        _set_clipboard_text("辨識結果")
+    assert _get_clipboard_text() == "原字"   # 文字照樣還原（舊行為）
+    assert _peek_format(fmt_png) is None     # 圖片不還原＝多格式路徑確實沒跑
+
+
 def _minimal_dib() -> bytes:
     """2x2、24bpp、BI_RGB 的最小合法 DIB（BITMAPINFOHEADER＋補齊到 4 bytes 的像素列）。"""
     header = struct.pack("<IiiHHIIiiII", 40, 2, 2, 1, 24, 0, 16, 0, 0, 0, 0)
     return header + bytes(16)
 
 
-def test_guard_restores_image_and_text_together():
+def test_guard_restores_image_and_text_together(monkeypatch):
+    monkeypatch.setattr(inject, "_multiformat_enabled", lambda: True, raising=False)
     dib = _minimal_dib()
     _put_formats([(win32con.CF_UNICODETEXT, "原本\0".encode("utf-16-le")),
                   (win32con.CF_DIB, dib)])
@@ -94,7 +107,8 @@ def test_guard_restores_image_and_text_together():
         win32clipboard.CloseClipboard()
 
 
-def test_guard_restores_file_list():
+def test_guard_restores_file_list(monkeypatch):
+    monkeypatch.setattr(inject, "_multiformat_enabled", lambda: True, raising=False)
     # DROPFILES 結構：pFiles=20、pt=(0,0)、fNC=0、fWide=1，接 UTF-16LE 路徑清單（雙 \0 結尾）
     path = "C:\\Windows\\notepad.exe"
     dropfiles = struct.pack("<IiiII", 20, 0, 0, 0, 1)
@@ -113,6 +127,7 @@ def test_guard_restores_file_list():
 
 
 def test_guard_falls_back_to_text_when_snapshot_raises(monkeypatch):
+    monkeypatch.setattr(inject, "_multiformat_enabled", lambda: True, raising=False)
     _set_clipboard_text("退路文字")
     monkeypatch.setattr(inject, "_snapshot_clipboard",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -121,7 +136,8 @@ def test_guard_falls_back_to_text_when_snapshot_raises(monkeypatch):
     assert _get_clipboard_text() == "退路文字"  # 快照炸掉仍以舊路徑還原文字
 
 
-def test_guard_empty_clipboard_keeps_pasted_text():
+def test_guard_empty_clipboard_keeps_pasted_text(monkeypatch):
+    monkeypatch.setattr(inject, "_multiformat_enabled", lambda: True, raising=False)
     win32clipboard.OpenClipboard()
     try:
         win32clipboard.EmptyClipboard()  # 原本就空

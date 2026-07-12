@@ -72,6 +72,7 @@ class App:
                 punct_fn=add_punct, hotwords_path=HOTWORDS_FILE,
                 verbatim=c.get("verbatim", False),
                 punct_min_chars=c.get("punct_min_chars", 10),
+                digits_to_arabic=c.get("digits_to_arabic", True),
             )
 
         def notify(kind: str) -> None:

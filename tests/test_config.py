@@ -13,6 +13,7 @@ def test_defaults_when_no_file(tmp_path, monkeypatch):
     assert cfg["history_enabled"] is True
     assert cfg["verbatim"] is False
     assert cfg["punct_min_chars"] == 10
+    assert cfg["digits_to_arabic"] is True
 
 
 def test_save_and_reload_merge(tmp_path, monkeypatch):

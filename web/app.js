@@ -143,7 +143,7 @@
   var fakeDb = {
     config: {
       hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'qwen3', paste_mode: 'clipboard',
-      use_punct_model: true, verbatim: false, punct_min_chars: 10, force_language: null, sounds_enabled: true, mic_device: null,
+      use_punct_model: true, verbatim: false, punct_min_chars: 10, digits_to_arabic: true, force_language: null, sounds_enabled: true, mic_device: null,
       overlay_corner: 'bottom-right', history_enabled: true, autostart: false,
       first_run_done: true, qwen3_use_gpu: true
     },
@@ -251,7 +251,7 @@
   function defaultConfigFallback() {
     return {
       hotkey: 'caps lock', hold_threshold_ms: 300, engine: 'qwen3', paste_mode: 'clipboard',
-      use_punct_model: true, verbatim: false, punct_min_chars: 10, force_language: null, sounds_enabled: true, mic_device: null,
+      use_punct_model: true, verbatim: false, punct_min_chars: 10, digits_to_arabic: true, force_language: null, sounds_enabled: true, mic_device: null,
       overlay_corner: 'bottom-right', history_enabled: true, autostart: false,
       first_run_done: true, qwen3_use_gpu: true
     };
@@ -296,6 +296,7 @@
     setSwitch(qs('#toggle-autostart'), !!cfg.autostart);
     setSwitch(qs('#toggle-sounds'), cfg.sounds_enabled !== false);
     setSwitch(qs('#toggle-verbatim'), !!cfg.verbatim);
+    setSwitch(qs('#toggle-digits'), cfg.digits_to_arabic !== false);
     var pasteMode = cfg.paste_mode || 'clipboard';
     setSegmented(qs('#paste-mode'), pasteMode);
     updatePasteModeHint(pasteMode);
@@ -343,6 +344,18 @@
         appState.config = await Api.set_config({ verbatim: next });
       } catch (err) {
         setSwitch(verbatimBtn, !next);
+        showToast('設定失敗，請稍後再試');
+      }
+    });
+
+    var digitsBtn = qs('#toggle-digits');
+    digitsBtn.addEventListener('click', async function () {
+      var next = digitsBtn.getAttribute('aria-checked') !== 'true';
+      setSwitch(digitsBtn, next);
+      try {
+        appState.config = await Api.set_config({ digits_to_arabic: next });
+      } catch (err) {
+        setSwitch(digitsBtn, !next);
         showToast('設定失敗，請稍後再試');
       }
     });

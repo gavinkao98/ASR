@@ -13,6 +13,7 @@ DEFAULTS = {
     "use_punct_model": True,          # Breeze 輸出後是否過 ct-punc（Task 21 實測後定案預設）
     "verbatim": False,                # 原樣輸出：跳過熱詞替換與全形正規化，保留自動標點與簡轉繁
     "punct_min_chars": 10,            # 短句免標點門檻（中文字+英文單字）；低於此不加標點，0=關閉
+    "digits_to_arabic": True,         # 中文數字轉阿拉伯：連續數字串逐字＋位值接單位（見 postprocess/digits.py）
     "force_language": None,           # None=自動偵測；"zh"/"en" 可強制
     "sounds_enabled": True,
     "mic_device": None,               # None=系統預設，否則為裝置名稱字串

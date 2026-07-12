@@ -73,6 +73,73 @@ def _write_format_bytes(fmt: int, data: bytes) -> None:
         raise RuntimeError(f"SetClipboardData failed (format {fmt})")
 
 
+# ---- 逐字輸入：單批 SendInput（VK_PACKET unicode）----
+# keyboard.write 逐字慢送（每字一次呼叫＋延遲）會與中文輸入法的非同步處理交錯：
+# CJK 直接通過、全形標點被抓進組字緩衝，稍後整團吐出 → 標點錯位（實案「，，。」擠團）。
+# 整句打包成一次 SendInput 原子性進輸入佇列即可避免，且長句即刻出字。
+_INPUT_KEYBOARD = 1
+_KEYEVENTF_KEYUP = 0x0002
+_KEYEVENTF_UNICODE = 0x0004
+_VK_RETURN = 0x0D
+
+
+class _KEYBDINPUT(ctypes.Structure):
+    _fields_ = (("wVk", wintypes.WORD), ("wScan", wintypes.WORD),
+                ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD),
+                ("dwExtraInfo", ctypes.c_size_t))
+
+
+class _INPUT(ctypes.Structure):
+    class _U(ctypes.Union):
+        _fields_ = (("ki", _KEYBDINPUT), ("_pad", ctypes.c_ubyte * 32))
+
+    _anonymous_ = ("u",)
+    _fields_ = (("type", wintypes.DWORD), ("u", _U))
+
+
+_user32.SendInput.restype = wintypes.UINT
+_user32.SendInput.argtypes = [wintypes.UINT, ctypes.c_void_p, ctypes.c_int]
+
+
+def _utf16_units(text: str) -> list[int]:
+    """展開為 UTF-16 編碼單元（BMP 一單元；增補平面代理對兩單元，Windows 會自行重組）。"""
+    b = text.encode("utf-16-le")
+    return [int.from_bytes(b[i:i + 2], "little") for i in range(0, len(b), 2)]
+
+
+def _send_unicode_batch(units: list[int]) -> None:
+    if not units:
+        return
+    n = len(units) * 2
+    arr = (_INPUT * n)()
+    for i, u in enumerate(units):
+        down, up = arr[2 * i], arr[2 * i + 1]
+        down.type = up.type = _INPUT_KEYBOARD
+        down.ki.wScan = up.ki.wScan = u
+        down.ki.dwFlags = _KEYEVENTF_UNICODE
+        up.ki.dwFlags = _KEYEVENTF_UNICODE | _KEYEVENTF_KEYUP
+    sent = _user32.SendInput(n, arr, ctypes.sizeof(_INPUT))
+    if sent != n:
+        raise RuntimeError(f"SendInput 僅送出 {sent}/{n} 個事件")
+
+
+def _send_enter() -> None:
+    arr = (_INPUT * 2)()
+    arr[0].type = arr[1].type = _INPUT_KEYBOARD
+    arr[0].ki.wVk = arr[1].ki.wVk = _VK_RETURN
+    arr[1].ki.dwFlags = _KEYEVENTF_KEYUP
+    _user32.SendInput(2, arr, ctypes.sizeof(_INPUT))
+
+
+def _type_text(text: str) -> None:
+    """逐字輸出整段文字：每段一批、換行送 Enter。"""
+    for i, seg in enumerate(text.split("\n")):
+        if i:
+            _send_enter()
+        if seg:
+            _send_unicode_batch(_utf16_units(seg))
+
+
 # ---- 備份格式白名單（spec：圖片＋檔案＋富文字＋純文字）----
 # 衍生格式（CF_TEXT/CF_OEMTEXT/CF_LOCALE←CF_UNICODETEXT、CF_BITMAP←CF_DIB）由
 # Windows 自動合成，不備不還。具名格式編號動態配發，執行期解析。
@@ -229,7 +296,7 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
         return False
     try:
         if mode == "type":
-            keyboard.write(text, delay=0.002)
+            _type_text(text)
             return True
         from app.heapprobe import checkpoint  # 0xc0000374 排查探針，結案後移除
         try:
@@ -244,7 +311,7 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
             # 剪貼簿被其他程式長時間鎖住（剪貼簿歷程/防毒都會在內容變動後搶開來讀）。
             # 寫不進就不硬撐：改逐字輸入，文字一樣送達，不再回報「處理失敗」。
             log.warning("剪貼簿寫入失敗（%s），改用逐字輸入送出", e)
-            keyboard.write(text, delay=0.002)
+            _type_text(text)
         return True
     except Exception:  # noqa: BLE001
         log.exception("inject failed")

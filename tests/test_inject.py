@@ -148,13 +148,45 @@ def test_guard_empty_clipboard_keeps_pasted_text(monkeypatch):
     assert _get_clipboard_text() == "辨識結果"  # 維持現行為：辨識文字留著（手動 Ctrl+V 退路）
 
 
+def test_utf16_units_bmp_and_surrogate():
+    """逐字輸出的 UTF-16 編碼單元展開：BMP 單元、增補平面成對（emoji 等）。"""
+    assert inject._utf16_units("你a") == [0x4F60, 0x61]
+    assert inject._utf16_units("\U0001D11E") == [0xD834, 0xDD1E]  # 代理對
+
+
+def test_type_text_sends_single_batch(monkeypatch):
+    """整句必須打包成單一批次送出：逐字慢送會被輸入法插隊、標點錯位
+    （實案：「，，。」全擠在句首後方）。"""
+    batches = []
+    monkeypatch.setattr(inject, "_send_unicode_batch", batches.append)
+    inject._type_text("直接輸出，保留。")
+    assert len(batches) == 1                      # 一句一批，不逐字
+    assert batches[0] == inject._utf16_units("直接輸出，保留。")
+
+
+def test_type_text_newline_becomes_enter(monkeypatch):
+    calls = []
+    monkeypatch.setattr(inject, "_send_unicode_batch", lambda u: calls.append(("uni", u)))
+    monkeypatch.setattr(inject, "_send_enter", lambda: calls.append(("enter",)))
+    inject._type_text("上\n下")
+    assert calls == [("uni", inject._utf16_units("上")), ("enter",),
+                     ("uni", inject._utf16_units("下"))]
+
+
+def test_inject_type_mode_uses_batch_typing(monkeypatch):
+    typed = []
+    monkeypatch.setattr(inject, "_type_text", typed.append)
+    assert inject.inject_text("測試句", "type") is True
+    assert typed == ["測試句"]
+
+
 def test_inject_falls_back_to_typing_when_clipboard_locked(monkeypatch):
     """剪貼簿被鎖（剪貼簿歷程/防毒長時間占用）時不整次失敗：改逐字輸入送出。
     實案：asr.log 10:04 三次「無法寫入剪貼簿」，辨識全對卻顯示處理失敗。"""
     typed, pasted = [], []
     monkeypatch.setattr(inject, "_set_clipboard_text",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked")))
-    monkeypatch.setattr(inject.keyboard, "write", lambda t, delay=0: typed.append(t))
+    monkeypatch.setattr(inject, "_type_text", typed.append)
     monkeypatch.setattr(inject.keyboard, "send", lambda *a: pasted.append(a))
     assert inject.inject_text("四零九六", "clipboard") is True
     assert typed == ["四零九六"]   # 文字仍送達

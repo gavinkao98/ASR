@@ -170,7 +170,14 @@ class Qwen3Engine(Engine):
         r = requests.post(f"http://127.0.0.1:{self._port}/v1/chat/completions",
                           json=payload, timeout=120)
         r.raise_for_status()
-        return _extract_asr_text(r.json()["choices"][0]["message"]["content"])
+        content = r.json()["choices"][0]["message"]["content"]
+        text = _extract_asr_text(content)
+        if not text:
+            # 觀測：VAD 判定有語音、模型卻回無語音（例：快速報數「一二三四五六七」）。
+            # 留原始輸出與音長，供判斷是 VAD 裁切問題還是模型特性。
+            log.info("模型回無語音：音長 %.1fs raw=%r",
+                     len(samples) / rate, content[:80])
+        return text
 
     def transcribe(self, samples: np.ndarray, sample_rate: int = 16000) -> str:
         if self._proc is None or self._proc.poll() is not None:

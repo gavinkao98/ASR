@@ -50,6 +50,14 @@ class App:
         log = get_logger("main")
         cfg = config.load()
 
+        # 原生層崩潰（存取違規等）時把 Python 各執行緒堆疊寫進 crash.log。
+        # heap 損毀（0xc0000374）走 fail-fast 不一定攔得到，完整 dump 靠
+        # scripts/enable_crashdump.bat 的 WER LocalDumps；此處是零成本的第一層。
+        import faulthandler
+        from app.paths import LOGS_DIR
+        self._crash_log = (LOGS_DIR / "crash.log").open("a", encoding="utf-8")
+        faulthandler.enable(self._crash_log)
+
         def breeze_factory():
             from app.engines.breeze import BreezeEngine
             return BreezeEngine(force_language=cfg.get("force_language"))

@@ -81,6 +81,26 @@ def test_mixed_sentence_from_history():
             == "我有一張4070，12GB的顯示卡。")
 
 
+# ASR 會把字母單位拆開唸寫（「G B」）；單位比對容忍空白、輸出收乾淨
+@pytest.mark.parametrize("src,expect", [
+    ("十二G B", "12GB"),
+    ("十二 GB", "12GB"),
+    ("三十 M B", "30MB"),
+])
+def test_unit_letters_with_spaces(src, expect):
+    assert to_arabic(src) == expect
+
+
+# 轉換結果緊貼既有阿拉伯數字時補一個空格，避免黏成一個大數字（407012GB）
+@pytest.mark.parametrize("src,expect", [
+    ("我有一張4070十二G B的顯示卡。", "我有一張4070 12GB的顯示卡。"),
+    ("4070四零九六", "4070 4096"),
+    ("四零九六7080", "4096 7080"),
+])
+def test_space_inserted_next_to_ascii_digits(src, expect):
+    assert to_arabic(src) == expect
+
+
 def test_empty_and_ascii_passthrough():
     assert to_arabic("") == ""
     assert to_arabic("hello world 123") == "hello world 123"

@@ -20,11 +20,24 @@ _UNIT = {"十": 10, "百": 100, "千": 1000}
 _SECTION = {"萬": 10_000, "億": 100_000_000}
 _HAS_PLACE = re.compile(r"[十百千萬億]")
 # 數值單位表：刻意不含通用量詞（個/種/次/位）與單字「分」（避開「十分感謝」）。
-# 英文單位加 (?![A-Za-z]) 防止吃到 GBP 這類更長縮寫。
-_UNITS = (r"公斤|公克|公尺|公里|公分|分鐘|小時|[GgMmKkTt][Bb](?![A-Za-z])|"
+# 英文單位加 (?![A-Za-z]) 防止吃到 GBP 這類更長縮寫；字母間容忍一個空白
+# （ASR 會把字母拆開唸寫成「G B」），數值與單位之間亦然，輸出時收乾淨。
+_UNITS = (r"公斤|公克|公尺|公里|公分|分鐘|小時|[GgMmKkTt]\s?[Bb](?![A-Za-z])|"
           r"趴|元|塊|度|倍|秒|天|日|年|月|週|歲|號")
 _VALUE_UNIT = re.compile(
-    r"([零〇一二兩三四五六七八九十百千萬億]+)(" + _UNITS + ")")
+    r"([零〇一二兩三四五六七八九十百千萬億]+)\s?(" + _UNITS + ")")
+
+
+def _pad_ascii_digits(m: re.Match, converted: str) -> str:
+    """轉換結果緊貼既有阿拉伯數字時補一個空格，避免黏成一個大數字（407012GB）。"""
+    s = m.string
+    before = s[m.start() - 1] if m.start() > 0 else ""
+    after = s[m.end()] if m.end() < len(s) else ""
+    if before.isascii() and before.isdigit():
+        converted = " " + converted
+    if after.isascii() and after.isdigit():
+        converted = converted + " "
+    return converted
 
 
 def _parse(expr: str) -> int | None:
@@ -93,11 +106,13 @@ def _sub_value_unit(m: re.Match) -> str:
     value = _parse(expr)
     if value is None:
         return m.group(0)
-    return str(value) + ("%" if unit == "趴" else unit)
+    unit = re.sub(r"\s", "", unit)     # 「G B」→「GB」
+    return _pad_ascii_digits(m, str(value) + ("%" if unit == "趴" else unit))
 
 
 def to_arabic(text: str) -> str:
     """先逐字轉連續數字串，再處理位值＋單位（順序固定：規則 1 清掉的長串
     不會再被規則 2 的貪婪匹配吃進位值表達式）。"""
-    text = _RUN.sub(lambda m: m.group().translate(_D2A), text)
+    text = _RUN.sub(
+        lambda m: _pad_ascii_digits(m, m.group().translate(_D2A)), text)
     return _VALUE_UNIT.sub(_sub_value_unit, text)

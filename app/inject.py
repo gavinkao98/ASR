@@ -231,9 +231,12 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
         if mode == "type":
             keyboard.write(text, delay=0.002)
             return True
+        from app.heapprobe import checkpoint  # 0xc0000374 排查探針，結案後移除
         try:
             with ClipboardGuard():
+                checkpoint("剪貼簿寫入前")
                 _set_clipboard_text(text)
+                checkpoint("剪貼簿寫入後")
                 time.sleep(0.05)       # 讓剪貼簿寫入落定
                 keyboard.send("ctrl+v")
                 time.sleep(0.2)        # 給目標視窗抓走內容的時間；離開時的還原會重試撐過鎖定

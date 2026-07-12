@@ -1,11 +1,10 @@
 @echo off
-rem é–‹å•Ÿ pythonw.exe å´©æ½°å®Œæ•´è¨˜éŒ„ï¼ˆWER LocalDumpsï¼‰ï¼šä¹‹å¾ŒèªéŸ³è¼¸å…¥è‹¥å†ç„¡æ•…é—œé–‰ï¼Œ
-rem æœƒåœ¨ data\crashdumps\ ç•™ä¸‹ dump æª”ï¼Œå¯ç›´æ¥åˆ†æå´©æ½°ç•¶ä¸‹çš„å‘¼å«å †ç–Šã€‚
-rem æŸ¥å®Œæƒ³ç§»é™¤è¨­å®šï¼Œé›™æ“Š disable_crashdump.bat å³å¯ã€‚
+rem ¶}±Ò pythonw.exe ±Y¼ì§¹¾ã°O¿ı¡]WER LocalDumps¡^¡C
+rem ¬d§¹·Q²¾°£³]©w¡AÂùÀ» disable_crashdump.bat §Y¥i¡C
 fltmc >nul 2>&1
 if %errorlevel%==0 goto :admin
 if "%~1"=="elevated" (
-    echo è‡ªå‹•ææ¬Šå¤±æ•—ï¼Œè«‹é—œé–‰æ­¤è¦–çª—å¾Œï¼Œæ”¹ç”¨æ»‘é¼ å³éµé»æ­¤æª”æ¡ˆä¸¦é¸ã€Œä»¥ç³»çµ±ç®¡ç†å“¡èº«åˆ†åŸ·è¡Œã€ã€‚
+    echo ¦Û°Ê´£Åv¥¢±Ñ¡A½ĞÃö³¬¦¹µøµ¡«á¡A§ï¥Î·Æ¹«¥kÁäÂI¦¹ÀÉ®×¨Ã¿ï¡u¥H¨t²ÎºŞ²z­û¨­¤À°õ¦æ¡v¡C
     pause
     exit /b 1
 )
@@ -18,5 +17,5 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\pyth
 reg add "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\pythonw.exe" /v DumpCount /t REG_DWORD /d 5 /f
 if not exist "C:\Users\Kao\Desktop\ASR\data\crashdumps" mkdir "C:\Users\Kao\Desktop\ASR\data\crashdumps"
 echo.
-echo å´©æ½°è¨˜éŒ„å·²é–‹å•Ÿï¼šä¸‹æ¬¡ pythonw å´©æ½°æœƒå­˜åˆ° data\crashdumps\
+echo ±Y¼ì°O¿ı¤w¶}±Ò¡G¤U¦¸ pythonw ±Y¼ì·|¦s¨ì data\crashdumps\
 pause

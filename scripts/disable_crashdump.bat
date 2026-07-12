@@ -1,9 +1,9 @@
 @echo off
-rem ç§»é™¤ enable_crashdump.bat å¯«å…¥çš„ LocalDumps è¨­å®šã€‚
+rem ²¾°£ enable_crashdump.bat ¼g¤Jªº LocalDumps ³]©w¡C
 fltmc >nul 2>&1
 if %errorlevel%==0 goto :admin
 if "%~1"=="elevated" (
-    echo è‡ªå‹•ææ¬Šå¤±æ•—ï¼Œè«‹é—œé–‰æ­¤è¦–çª—å¾Œï¼Œæ”¹ç”¨æ»‘é¼ å³éµé»žæ­¤æª”æ¡ˆä¸¦é¸ã€Œä»¥ç³»çµ±ç®¡ç†å“¡èº«åˆ†åŸ·è¡Œã€ã€‚
+    echo ¦Û°Ê´£Åv¥¢±Ñ¡A½ÐÃö³¬¦¹µøµ¡«á¡A§ï¥Î·Æ¹«¥kÁäÂI¦¹ÀÉ®×¨Ã¿ï¡u¥H¨t²ÎºÞ²z­û¨­¤À°õ¦æ¡v¡C
     pause
     exit /b 1
 )
@@ -12,5 +12,5 @@ exit /b
 
 :admin
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\pythonw.exe" /f
-echo å´©æ½°è¨˜éŒ„è¨­å®šå·²ç§»é™¤ã€‚
+echo ±Y¼ì°O¿ý³]©w¤w²¾°£¡C
 pause

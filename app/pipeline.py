@@ -63,22 +63,16 @@ class Pipeline:
                 self._q.task_done()
 
     def _process(self, audio) -> None:
-        from app.heapprobe import checkpoint  # 0xc0000374 排查探針，結案後移除
-        checkpoint("進入處理")
         speech = self._vad_fn(audio)
-        checkpoint("vad後")
         if speech is None or len(speech) == 0:
             self._notify("empty")
             return
         engine, raw = self._engines.transcribe(speech)   # 鎖內辨識，切換引擎時不會被卸載
-        checkpoint("asr後")
         text = self._chain_factory(engine)(raw)
-        checkpoint("chain後")
         if not text:
             self._notify("empty")
             return
         ok = self._inject_fn(text, self.paste_mode)
-        checkpoint("inject後")
         self._history_add(text, engine.name)
         self._notify("done" if ok else "error")
 

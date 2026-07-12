@@ -1,7 +1,7 @@
 """文字注入：預設剪貼簿+Ctrl+V（剪貼簿操作全委由常駐「替身」子行程），備選逐字輸入。
 
 為什麼要替身：主行程內的 API 攔截層（防毒注入 DLL）會在 SetClipboardData 呼叫中
-造成 heap 損毀（0xc0000374，crash dump×4＋faulthandler×4＋heapprobe 交叉定罪）。
+造成 heap 損毀（0xc0000374）。
 剪貼簿讀寫全部移進拋棄式子行程（app/clipboard_helper.py）後，攔截層再出事死的是
 替身——主行程收屍重生即可。替身常駐（冷啟含防毒掃描實測 ~0.8s，只在預熱時付一次）。
 
@@ -193,13 +193,10 @@ def inject_text(text: str, mode: str = "clipboard") -> bool:
         if mode == "type":
             _type_text(text)
             return True
-        from app.heapprobe import checkpoint  # 0xc0000374 觀察期探針
         if _helper.begin(text, _multiformat_enabled()):
-            checkpoint("替身備妥後")
             keyboard.send("ctrl+v")
             time.sleep(0.2)   # 給目標視窗抓走內容的時間
             _helper.finish()
-            checkpoint("替身還原後")
         else:
             # 替身不可用：逐字輸出，文字一樣送達（標點可能受輸入法影響，聊勝於失敗）
             log.warning("剪貼簿替身不可用，改逐字輸出")

@@ -1,7 +1,7 @@
 """pywebview js_api。方法名/回傳格式=前端契約（Task 22 表），不可改簽名。"""
 import threading
 
-from app import config, downloads
+from app import config, downloads, gpu
 from app.paths import HOTWORDS_FILE
 from app.logger import get_logger
 
@@ -55,6 +55,17 @@ class Bridge:
         return {"ok": True}
 
     def download_engine(self, name: str):
+        # 先擋硬體，再下載。兩顆引擎都需要 NVIDIA CUDA（Qwen3 走 llama-server 的 CUDA
+        # build，Breeze 在 breeze.py 硬寫 device="cuda"），所以沒有 GPU 就沒有能跑的路徑。
+        # 這個檢查不能只放前端：scripts/download_models.py 完全繞過精靈，而讓使用者下載
+        # 3.6GB 之後才在引擎載入時失敗，是最糟的失敗方式。
+        env = gpu.detect()
+        if not env["available"]:
+            msg = f"下載失敗：需要 NVIDIA 顯示卡與驅動程式（{env['detail']}）"
+            log.warning("擋下 %s 下載：%s", name, env["detail"])
+            self._dl.update(active=False, progress=0.0, label=msg)
+            return {"ok": False, "error": msg}
+
         def job():
             self._dl.update(active=True, progress=0.0)
             try:
@@ -112,12 +123,13 @@ class Bridge:
         return {"ok": True, "level": level, "seconds": len(audio) / 16000}
 
     def env_check(self):
-        try:
-            import ctranslate2
-            n = ctranslate2.get_cuda_device_count()
-            return {"cuda": n > 0, "detail": f"CUDA 裝置數：{n}"}
-        except Exception as e:  # noqa: BLE001
-            return {"cuda": False, "detail": f"檢查失敗：{e}"}
+        """回傳 {"cuda": bool, "detail": str}（前端契約，不可改）。
+
+        偵測改走 app.gpu（CUDA driver API），不再用 ctranslate2——後者是 Breeze 選用
+        引擎的依賴，沒裝 Breeze 的使用者不該因此就檢查不了硬體。
+        """
+        res = gpu.detect()
+        return {"cuda": res["available"], "detail": res["detail"]}
 
     def mark_first_run_done(self):
         cfg = config.update({"first_run_done": True})

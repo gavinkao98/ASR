@@ -86,6 +86,21 @@ def _max_tokens(audio_seconds: float) -> int:
     return int(min(2048, 64 + audio_seconds * 12))
 
 
+def _startup_failure_reason() -> str:
+    """llama-server 啟動即退出時的說明文字。
+
+    最常見的原因是硬體不符（CUDA build 找不到驅動），而使用者看到「請手動執行上列 cmd」
+    完全無從下手。先問一次 GPU 狀態，把最可能的原因直接講出來。
+    """
+    from app import gpu
+    env = gpu.detect()
+    if not env["available"]:
+        return (f"llama-server 無法啟動：需要 NVIDIA 顯示卡與驅動程式（{env['detail']}）。"
+                f"語音辨識在 GPU 上執行，請安裝或更新 NVIDIA 驅動程式後再試。")
+    return ("llama-server 啟動即退出。GPU 偵測正常，可能是模型檔損毀或顯示記憶體不足；"
+            f"詳細錯誤見 {log_dir() / 'llama-server.log'}")
+
+
 def _to_wav_b64(samples: np.ndarray, rate: int) -> str:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
@@ -136,7 +151,7 @@ class Qwen3Engine(Engine):
             except requests.RequestException:
                 pass
             if self._proc.poll() is not None:
-                raise RuntimeError("llama-server 啟動即退出，請手動執行上列 cmd 看錯誤")
+                raise RuntimeError(_startup_failure_reason())
             time.sleep(0.5)
         self.unload()  # 逾時未就緒：收掉子行程，避免殘留佔顯卡拖累下次載入
         raise TimeoutError("llama-server 60 秒內未就緒")

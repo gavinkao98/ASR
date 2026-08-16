@@ -30,6 +30,37 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+  # The job above proves the lock file resolves and installs. It does NOT
+  # prove setup.bat works: it never runs the script, never creates a venv,
+  # and reaches Python through setup-python rather than the version check
+  # setup.bat performs. Since setup.bat is literally step 1 of the README --
+  # and someone it fails on will close the tab rather than file an issue --
+  # run the real thing and use the venv it produces.
+  test-setup-script:
+    name: setup.bat end-to-end
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      # setup.bat skips its `pause` calls when CI is defined, which GitHub
+      # Actions sets. Without that it would block here forever.
+      - name: Run setup.bat
+        shell: cmd
+        run: setup.bat
+
+      # Use the interpreter setup.bat built, not the runner's -- that is the
+      # whole point. If the venv or the install inside it were broken, this
+      # is where it shows.
+      - name: Run tests using the venv setup.bat created
+        shell: cmd
+        run: .venv\Scripts\python -m pytest -q
+
   # Early warning: resolve requirements.txt fresh so an upstream breaking
   # release shows up here rather than in a user's first install. Advisory
   # only -- it must not block a PR, since it can break for reasons outside

@@ -929,10 +929,11 @@
     qs('#env-note').hidden = true;
     qs('#wizard-next-1').disabled = true;
 
-    var res;
+    var res, checkFailed = false;
     try {
       res = await Api.env_check();
     } catch (err) {
+      checkFailed = true;
       res = { cuda: false, detail: '檢查失敗，可稍後於「模型」分頁重新確認' };
     }
 
@@ -941,16 +942,25 @@
       resultBox.classList.add('ok');
       setIconPath(qs('#env-icon-path'), 'M5 13l4 4L19 7');
       qs('#env-title').textContent = 'GPU 加速：可使用';
+      qs('#env-note').hidden = true;
     } else {
       resultBox.classList.add('warn');
       setIconPath(qs('#env-icon-path'), 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z');
-      qs('#env-title').textContent = '未偵測到 GPU 加速';
       var note = qs('#env-note');
       note.hidden = false;
-      note.textContent = '仍可用 CPU 模式運作，只是辨識速度會比較慢。';
+      if (checkFailed) {
+        // 偵測本身失敗 ≠ 確定沒有 GPU。這種不確定的狀態不擋，後端在下載前還會再驗一次。
+        qs('#env-title').textContent = '無法確認 GPU 狀態';
+        note.textContent = '可以繼續，但若這台電腦沒有 NVIDIA 顯示卡，下載會被中止。';
+      } else {
+        qs('#env-title').textContent = '不符合硬體需求';
+        note.textContent = '本工具需要 NVIDIA 顯示卡與驅動程式——語音辨識在 GPU 上執行，'
+          + '沒有可用的 CUDA 裝置就無法運作。請安裝或更新 NVIDIA 驅動程式後再重新開啟。';
+      }
     }
     qs('#env-detail').textContent = res.detail || '';
-    qs('#wizard-next-1').disabled = false;
+    // 確定不符需求就擋在這一步。讓使用者下載 3.6GB 之後才在載入引擎時失敗，是最糟的失敗方式。
+    qs('#wizard-next-1').disabled = !res.cuda && !checkFailed;
   }
 
   async function onEnterWizardStep2() {

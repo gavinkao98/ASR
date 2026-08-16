@@ -67,15 +67,25 @@ Engines declare their own capabilities, and the post-processing chain reads thos
 | Engine | `has_punct` | `outputs_simplified` | Runtime |
 |---|---|---|---|
 | Qwen3-ASR-1.7B | yes | yes | `llama-server` subprocess over localhost |
-| Breeze-ASR-25 | no | no | CTranslate2 in-process |
+| Breeze-ASR-25 (deprecated) | no | no | CTranslate2 in-process |
+
+Both require an NVIDIA GPU: the bundled `llama-server` is a CUDA build, and `BreezeEngine.load()` asks for `device="cuda"` outright. There is no CPU fallback, so `Bridge.download_engine()` refuses to download anything when `app.gpu.detect()` finds no CUDA device — failing before a multi-gigabyte download rather than after it.
+
+Breeze is scheduled for removal in v1.2. Its dependencies live in `requirements-breeze.txt` and are not installed by default; everything the default path needs is in `requirements.lock.txt`.
 
 This is why the chain is built per-engine rather than fixed: punctuation restoration is skipped when the engine already punctuates, and Simplified→Traditional conversion is skipped when the engine already emits Traditional.
 
 ### CUDA DLL loading
 
+This exists **only for Breeze**. Qwen3 talks to `llama-server`, a separate process that ships its own CUDA runtime, so the default install needs none of it.
+
 `main._inject_nvidia_dlls()` runs at **module scope, before any other import**, and `tests/conftest.py` imports `main` for exactly that reason. Both `os.add_dll_directory()` and a `PATH` prepend are needed: CTranslate2's own DLLs are found by the former, but cuDNN 8 loads its submodules by bare filename through the standard search order, which ignores `add_dll_directory`. Only doing one of the two produces a load failure that looks like a missing-CUDA error.
 
-The function returns silently when the `nvidia` packages aren't installed, which is what lets the test suite run CPU-only in CI.
+The function returns silently when the `nvidia` packages aren't installed — which is now the normal case, since they moved to `requirements-breeze.txt`. That is also what lets the test suite run GPU-free in CI. When Breeze goes away in v1.2, this function goes with it, and so does the `setuptools<81` pin that CTranslate2 forces.
+
+### GPU detection
+
+`app/gpu.py` asks the CUDA driver (`nvcuda.dll`) directly through `ctypes`. It deliberately does **not** use `ctranslate2.get_cuda_device_count()`, which is what it replaced: ctranslate2 is a Breeze dependency, and a hardware check for the *default* engine must not depend on an optional component. Loading `nvcuda.dll` succeeds exactly when the NVIDIA driver is installed, which is the same condition that decides whether the CUDA `llama-server` can start — so it answers the question actually being asked.
 
 ## Post-processing chain
 
@@ -96,4 +106,8 @@ Most user-visible complaints about recognition quality get fixed here rather tha
 
 The Windows API surface is pushed to the edges so the interesting logic stays testable. `PttStateMachine` takes injected timestamps; the post-processing stages are pure functions; `Pipeline` takes every collaborator as a constructor argument and is exercised with fakes.
 
-The four test files that need real models (`test_breeze_engine`, `test_qwen3_engine`, `test_punct`, `test_vad`) guard themselves with `pytest.mark.skipif` on the corresponding `downloads.*_ready()` check. A fresh checkout has no `models/` directory, so they skip — which is what lets CI run the other 138 tests on a GPU-free runner in a couple of seconds.
+The four test files that need real models (`test_breeze_engine`, `test_qwen3_engine`, `test_punct`, `test_vad`) guard themselves with `pytest.mark.skipif` on the corresponding `downloads.*_ready()` check. A fresh checkout has no `models/` directory, so they skip — which is what lets CI run the other 151 tests on a GPU-free runner.
+
+CI also runs `setup.bat` itself and executes the suite with the interpreter it produces. Installing the lock file is not the same thing as the documented install path working, and a first-step failure is the one users never report.
+
+The same principle covers hardware: `tests/test_gpu.py` substitutes a fake CUDA library for `nvcuda.dll`, so every branch of GPU detection — no driver, driver but no device, `cuInit` failure, multiple devices — is exercised on a runner that has no GPU at all.

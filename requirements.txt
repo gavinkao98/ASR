@@ -1,19 +1,17 @@
-# setuptools<81：ctranslate2==4.4.0 的 __init__.py 在 import 時用 pkg_resources；
-# setuptools 81+ 移除了 pkg_resources，會導致 `import ctranslate2` 直接炸掉。鎖住舊版避免。
-setuptools==75.8.0
-faster-whisper==1.1.1
-ctranslate2==4.4.0
-nvidia-cublas-cu12~=12.4
-nvidia-cudnn-cu12==8.9.7.29
-sherpa-onnx>=1.11
-sounddevice>=0.5
+# 直接依賴（宣告用）。實際安裝請用 requirements.lock.txt——那份才是經過驗證的版本組合。
+#
+# 這裡只有預設引擎 Qwen3 的路徑會用到的東西。Breeze 引擎（選用）的依賴另見
+# requirements-breeze.txt；把它們分開的原因寫在那個檔案裡。
+
+sherpa-onnx>=1.11          # VAD（silero）；標點模型（ct-punc）也走它，但那只有 Breeze 用得到
+sounddevice>=0.5           # 麥克風錄音
 numpy>=1.26,<3
-keyboard==0.13.5
-pywin32>=306
-pystray>=0.19.5
-Pillow>=10
-pywebview>=5.1
-opencc-python-reimplemented==0.1.7
-huggingface_hub>=0.23
-requests>=2.31
-pytest>=8
+keyboard==0.13.5           # 全域熱鍵 hook
+pywin32>=306               # 剪貼簿 / Job Object（llama-server 隨主程式同生共死）
+pystray>=0.19.5            # 系統匣圖示
+Pillow>=10                 # pystray 的圖示繪製
+pywebview>=5.1             # 設定視窗（WebView2）
+opencc-python-reimplemented==0.1.7   # 簡→繁（s2twp，含台灣用語）
+huggingface_hub>=0.23      # 模型下載
+requests>=2.31             # llama-server HTTP + GitHub release API
+pytest>=8                  # 開發用

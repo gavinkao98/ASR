@@ -1,0 +1,55 @@
+# 鎖定版本 —— setup.bat 實際安裝的就是這一份。
+#
+# 為什麼需要 lock：requirements.txt 用的是範圍（>=），意思是不同時間安裝會得到不同版本組合。
+# 開發機上「能跑」的那組如果沒有記下來，使用者裝出來的就是另一個環境，回報的問題也無從重現。
+#
+# 這份是 2026-08-17 於開發機（Windows 10 / Python 3.12）實測可用的完整組合，
+# 涵蓋 requirements.txt 的直接依賴與其所有傳遞依賴。
+#
+# 更新方式：
+#   .venv\Scripts\pip install -r requirements.txt --upgrade
+#   .venv\Scripts\python -m pytest        # 必須全過
+#   .venv\Scripts\pip freeze > requirements.lock.txt   # 再手動移除 Breeze 側套件
+#
+# 注意：這裡刻意不含 Breeze 引擎的依賴（見 requirements-breeze.txt）。
+
+anyio==4.14.1
+bottle==0.13.4
+certifi==2026.6.17
+cffi==2.1.0
+charset-normalizer==3.4.9
+click==8.4.2
+clr_loader==0.3.1
+colorama==0.4.6
+filelock==3.29.7
+fsspec==2026.6.0
+h11==0.16.0
+hf-xet==1.5.1
+httpcore==1.0.9
+httpx==0.28.1
+huggingface_hub==1.23.0
+idna==3.18
+iniconfig==2.3.0
+keyboard==0.13.5
+numpy==2.5.1
+opencc-python-reimplemented==0.1.7
+packaging==26.2
+pillow==12.3.0
+pluggy==1.6.0
+proxy_tools==0.1.0
+pycparser==3.0
+Pygments==2.20.0
+pystray==0.19.5
+pytest==9.1.1
+pythonnet==3.1.0
+pywebview==6.2.1
+pywin32==312
+PyYAML==6.0.3
+requests==2.34.2
+sherpa_onnx==1.13.4
+sherpa-onnx-core==1.13.4
+six==1.17.0
+sounddevice==0.5.5
+tqdm==4.68.4
+typing_extensions==4.16.0
+urllib3==2.7.0

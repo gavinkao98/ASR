@@ -20,13 +20,22 @@ Windows' built-in dictation and the mainstream cloud dictation tools are a poor 
 
 This project fixes all three by running a local ASR model with a post-processing chain tuned for zh-TW, and by injecting the result into whatever window currently has focus — so it works in LINE, a browser address bar, Word, an IDE, or a terminal without any per-app integration.
 
+## Requirements
+
+| | |
+|---|---|
+| OS | Windows 10 or 11 |
+| Python | 3.12 specifically — `setup.bat` refuses other versions rather than building a venv that fails later |
+| GPU | **An NVIDIA GPU with current drivers is required.** Recognition runs on the GPU; there is no working CPU path |
+| Disk | ~4 GB free — the first run downloads about 3.6 GB of models and runtime |
+
+The GPU requirement is not a preference. The bundled `llama-server` is a CUDA build, and the alternative Breeze engine requests a CUDA device too, so a machine without a usable CUDA device has nothing to fall back to. The first-run wizard checks for one and stops there if it is missing, rather than letting you download several gigabytes first.
+
 ## Quick start
 
-Requires Windows 10/11 and Python 3.12. An NVIDIA GPU makes recognition faster but is **not** required — CPU works, just slower.
-
-1. **Double-click `setup.bat`** — creates an isolated virtual environment and installs dependencies. Needs a network connection.
+1. **Double-click `setup.bat`** — creates an isolated virtual environment and installs the pinned dependencies from `requirements.lock.txt`. Needs a network connection.
 2. **Double-click `啟動語音輸入.vbs`** — starts the app. It runs silently in the system tray, with no console window.
-3. A **first-run wizard** appears once, walking you through an environment check, model download (Qwen3-ASR-1.7B, the llama-server runtime, and the VAD model), and a microphone test.
+3. A **first-run wizard** appears once, walking you through a hardware check, model download (Qwen3-ASR-1.7B, the llama-server runtime, and the VAD model), and a microphone test.
 
 Then, anywhere you can see a text cursor:
 
@@ -62,9 +71,15 @@ A few design decisions worth calling out:
 | Engine | Notes |
 |---|---|
 | **Qwen3-ASR-1.7B** (default) | Native punctuation, automatic Simplified→Traditional conversion, strong code-switched English |
-| **Breeze-ASR-25** | Alternative engine, switchable at runtime from the settings window |
+| **Breeze-ASR-25** (deprecated) | Alternative engine, switchable at runtime. Not installed by default — see below |
 
 Engines implement a small interface in `app/engines/base.py`, so adding a third is a self-contained change.
+
+**Breeze is deprecated and scheduled for removal in v1.2.** Qwen3 is clearly better in day-to-day use, and Breeze drags in about 1 GB of dependencies that nothing else needs — CTranslate2, cuDNN 8, and a `setuptools<81` pin that would otherwise block newer Python versions. `setup.bat` no longer installs them. If you want Breeze anyway:
+
+```bash
+.venv\Scripts\pip install -r requirements-breeze.txt
+```
 
 ## Configuration
 
@@ -92,15 +107,19 @@ Changes take effect immediately — no restart.
 .venv\Scripts\python -m pytest
 ```
 
-144 tests cover the push-to-talk state machine, the post-processing chain, both engine adapters, clipboard save/restore, config, history, and downloads.
+157 tests cover the push-to-talk state machine, the post-processing chain, both engine adapters, clipboard save/restore, GPU detection, config, history, and downloads.
 
-Six of them exercise real models (Breeze, Qwen3, punctuation, VAD) and skip automatically when those aren't downloaded. So a fresh checkout runs **138 tests in ~2.5 seconds with no GPU and no model downloads**, which is exactly what CI does on `windows-latest` / Python 3.12. With the models present locally, all 144 run in about 13 seconds.
+Six of them exercise real models (Breeze, Qwen3, punctuation, VAD) and skip automatically when those aren't downloaded. So a fresh checkout runs **151 tests in about 20 seconds with no GPU and no model downloads**, which is exactly what CI does on `windows-latest` / Python 3.12. With the models present locally, all 157 run in about 10 seconds.
+
+Dependencies are pinned in `requirements.lock.txt` — that is what `setup.bat` installs and what CI's blocking job uses. `requirements.txt` holds the same direct dependencies as version ranges; CI resolves it in a second, advisory job so an upstream breaking release shows up there rather than in someone's first install.
 
 [`docs/architecture.md`](docs/architecture.md) explains the threading model, the clipboard-isolation design, and the CUDA DLL loading order — read it before making a substantial change. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Troubleshooting
 
 **Text won't paste into some windows.** If the target window runs elevated (as Administrator), Windows blocks input from a non-elevated process. This is a Windows security boundary, not a bug. The text is already on your clipboard — either press `Ctrl+V` manually, or start this tool as Administrator too.
+
+**"NVIDIA driver not found" during the first-run wizard.** The wizard looks for a usable CUDA device via the NVIDIA driver (`nvcuda.dll`) and stops if there isn't one. Install or update the driver from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx) and reopen the window. If you do have an NVIDIA card and still see this, the driver install is likely broken — reinstalling it usually fixes the missing library.
 
 **cuDNN / CUDA errors.** Update your GPU driver, then re-run `setup.bat`.
 

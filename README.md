@@ -96,7 +96,7 @@ Changes take effect immediately — no restart.
 
 Six of them exercise real models (Breeze, Qwen3, punctuation, VAD) and skip automatically when those aren't downloaded. So a fresh checkout runs **138 tests in ~2.5 seconds with no GPU and no model downloads**, which is exactly what CI does on `windows-latest` / Python 3.12. With the models present locally, all 144 run in about 13 seconds.
 
-Design documents for each feature live in [`docs/`](docs/). See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+[`docs/architecture.md`](docs/architecture.md) explains the threading model, the clipboard-isolation design, and the CUDA DLL loading order — read it before making a substantial change. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## Troubleshooting
 

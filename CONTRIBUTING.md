@@ -39,7 +39,7 @@ Please add tests for behaviour changes. The existing suite is a good guide to th
 
 ## Architecture notes
 
-Read [`docs/`](docs/) for the design document behind each feature before making a substantial change. Two constraints are load-bearing and easy to break by accident:
+Read [`docs/architecture.md`](docs/architecture.md) before making a substantial change. Two constraints are load-bearing and easy to break by accident:
 
 1. **NVIDIA DLL injection must happen before `ctranslate2` or `faster_whisper` is imported.** `main.py` does this at module scope, and `tests/conftest.py` imports `main` for the same reason. Don't move it.
 2. **Clipboard access belongs in the helper process**, not the main process. `app/clipwin.py` is deliberately dependency-free so both processes can share it. The isolation is what keeps an antivirus conflict from taking down the app.

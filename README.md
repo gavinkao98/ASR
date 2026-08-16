@@ -1,96 +1,115 @@
-# 語音輸入
+# Voice Input — offline Traditional Chinese speech-to-text for Windows
 
-在任何 Windows 應用程式裡，用說話取代打字——完全在你自己的電腦上執行，不用連網、也不會把你的聲音送到雲端（第一次安裝時下載模型那次除外）。預設辨識引擎是 **Qwen3-ASR-1.7B**，具備原生標點並會自動簡轉繁；也內建可自由切換的 **Breeze-ASR-25**。
+[![CI](https://github.com/gavinkao98/ASR/actions/workflows/ci.yml/badge.svg)](https://github.com/gavinkao98/ASR/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 
-## 這是什麼＋一分鐘上手
+**English** ｜ [繁體中文](README.zh-TW.md)
 
-安裝好之後，「語音輸入」會安靜地待在工作列（螢幕右下角）的小圖示裡。不管你人在 LINE、瀏覽器網址列、Word，還是任何看得到游標在閃的地方，都可以直接用講的輸入文字：中文會自動變成有標點的繁體中文，句子裡夾雜的英文術語（例如 API、benchmark）也會維持正確拼寫。
+Hold a key, talk, release — the text lands at your cursor in **any** Windows application. Everything runs on your own machine: no account, no cloud API, no audio ever leaves the computer (the only network access is the one-time model download during setup).
 
-核心操作只有一個動作：
+Built for people who write Traditional Chinese but whose sentences are full of English technical terms. Output is punctuated Traditional Chinese, and terms like `API`, `benchmark`, or `Kubernetes` keep their correct spelling instead of being mangled into phonetic Chinese.
 
-1. **按住 CapsLock 鍵**（左上角「大小寫鎖定」那顆鍵）開始說話——螢幕角落會出現一個小小的錄音提示，同時有提示音（可在設定裡關掉）
-2. **放開** → 稍等一下，辨識出來的文字就會自動貼到游標所在的位置
-3. 只是想切換大小寫的話，跟平常一樣「輕點一下」CapsLock 就好；只有「按住不放」才會觸發錄音，兩種用法不會互相干擾
+## Why this exists
 
-就這樣，沒有其他步驟。
+Windows' built-in dictation and the mainstream cloud dictation tools are a poor fit for Traditional Chinese developers on three counts:
 
-## 安裝與啟動
+- **They send your audio to a server.** That rules them out for anyone handling client work, medical notes, legal drafts, or internal code discussions.
+- **They target Simplified Chinese.** Traditional Chinese output is an afterthought when it exists at all, and locale-specific vocabulary (台灣用語) gets converted incorrectly.
+- **They destroy code-switched English.** Saying "先跑 benchmark 再看 API 延遲" typically comes back with the English words transcribed phonetically.
 
-### 第一次安裝（只需要做一次）
+This project fixes all three by running a local ASR model with a post-processing chain tuned for zh-TW, and by injecting the result into whatever window currently has focus — so it works in LINE, a browser address bar, Word, an IDE, or a terminal without any per-app integration.
 
-1. **雙擊 `setup.bat`**
-   會跳出一個黑底文字視窗開始跑，這是在幫你建立一個獨立的 Python 執行環境並安裝所需套件，過程中請保持網路連線。看到「環境建置完成」就是成功了，按任意鍵關閉視窗即可。
-2. **雙擊 `啟動語音輸入.vbs`** 啟動工具
-   跟 `setup.bat` 不同，這個檔案啟動時**不會**跳出任何視窗，只會安安靜靜地在工作列出現一個小圖示。以後要用，都用這個檔案啟動（或看下面做一個桌面捷徑）。
+## Quick start
 
-### 想要桌面捷徑？
+Requires Windows 10/11 and Python 3.12. An NVIDIA GPU makes recognition faster but is **not** required — CPU works, just slower.
 
-如果不想每次都跑到專案資料夾找 `啟動語音輸入.vbs`，可以建一個桌面捷徑：在專案資料夾空白處按住 **Shift 鍵再按右鍵**，選單裡選「在這裡開啟 PowerShell 視窗」（部分版本會顯示成「在終端機中開啟」或「在此處開啟命令視窗」，是同樣的東西），貼上以下指令後按 Enter：
+1. **Double-click `setup.bat`** — creates an isolated virtual environment and installs dependencies. Needs a network connection.
+2. **Double-click `啟動語音輸入.vbs`** — starts the app. It runs silently in the system tray, with no console window.
+3. A **first-run wizard** appears once, walking you through an environment check, model download (Qwen3-ASR-1.7B, the llama-server runtime, and the VAD model), and a microphone test.
 
-```
+Then, anywhere you can see a text cursor:
+
+1. **Hold `CapsLock`** and speak — a small recording indicator appears in the screen corner.
+2. **Release** — the transcript is pasted at the cursor.
+
+A quick *tap* of `CapsLock` still toggles capitals as usual. Only a sustained *hold* triggers recording, so the two uses never collide.
+
+Prefer a desktop shortcut? Run:
+
+```bash
 .venv\Scripts\python scripts\make_shortcut.py
 ```
 
-桌面就會出現一個「語音輸入」的捷徑，之後雙擊它，效果跟雙擊 `啟動語音輸入.vbs` 完全一樣。
+## How it works
 
-### 首次啟動精靈
+```
+CapsLock hold ──► Recorder ──► VAD trim ──► ASR engine ──► post-process chain ──► inject at cursor
+                 (sounddevice)  (silero)   (Qwen3/Breeze)  (punct→tradify→        (clipboard helper
+                                                            digits→hotwords→       subprocess)
+                                                            repeat-guard)
+```
 
-**第一次**啟動時，會自動跳出一個小視窗，帶你完成三個步驟：
+A few design decisions worth calling out:
 
-1. **環境檢查**：確認顯示卡加速有沒有就緒（會影響辨識速度，但沒有 GPU 加速一樣能用，只是比較慢）。這個畫面本身要靠 Windows 內建的 WebView2 元件才能顯示，一般 Windows 10／11 都已內建，通常不用額外處理。
-2. **下載辨識模型**：預設引擎 Qwen3-ASR-1.7B、llama-server 執行元件與語音偵測模型都會一併下載；大小依 GPU／CPU 版本而定，需要網路連線，依網速可能要幾分鐘，請耐心等待、不要中途關閉視窗。
-3. **麥克風測試**：按一下按鈕、講幾句話，確認電腦有收到你的聲音。
+- **Push-to-talk is a state machine, not a keypress handler.** `app/ptt_logic.py` distinguishes tap from hold with a configurable threshold, and re-emits the original keystroke on a cancelled tap so `CapsLock` keeps its normal behaviour.
+- **Text injection goes through the clipboard, and the clipboard is restored afterwards** — not just text, but images, files, and rich text (Word/HTML) come back byte-identical.
+- **Clipboard I/O runs in a separate helper process** (`app/clipboard_helper.py`, using the dependency-free `app/clipwin.py` ctypes layer). Antivirus and clipboard-manager software are notorious for destabilising in-process clipboard access; isolating it means a conflict kills only the disposable helper, which respawns, while the main process and the paste result are unaffected.
+- **The post-processing chain is composable and engine-aware** (`app/postprocess/chain.py`): it only adds punctuation if the engine doesn't produce it natively, only converts Simplified→Traditional if the engine emits Simplified, and so on.
 
-三步驟都完成後就大功告成，之後每次啟動都不會再看到這個精靈——只會在工作列看到常駐圖示，照「一分鐘上手」的方式直接使用即可。
+### Recognition engines
 
-## 設定視窗說明
-
-工作列上的圖示：**左鍵點一下**打開設定視窗；**右鍵點一下**彈出選單，可以「暫停辨識／恢復辨識」「開啟設定」「結束」。
-
-設定視窗裡有 5 個分頁：
-
-| 分頁 | 用途 |
+| Engine | Notes |
 |---|---|
-| **一般** | 開機自動啟動、提示音開關、貼上方式、原樣輸出、中文數字轉阿拉伯數字（「四零九六」→ 4096、「十二GB」→ 12GB）、短句免標點、選擇要用哪個麥克風裝置 |
-| **熱鍵** | 更改觸發錄音的按鍵、調整「按多久才算長按（開始錄音）」的門檻 |
-| **模型** | 切換辨識引擎（Breeze-ASR-25／Qwen3），或下載尚未安裝的引擎 |
-| **熱詞** | 自訂「常被聽錯的詞」修正規則 |
-| **歷史** | 查看最近 200 筆辨識紀錄 |
+| **Qwen3-ASR-1.7B** (default) | Native punctuation, automatic Simplified→Traditional conversion, strong code-switched English |
+| **Breeze-ASR-25** | Alternative engine, switchable at runtime from the settings window |
 
-### 熱詞規則怎麼寫？
+Engines implement a small interface in `app/engines/base.py`, so adding a third is a self-contained change.
 
-在「熱詞」分頁裡，一行一條規則，格式是：
+## Configuration
 
-```
-誤辨詞=正確詞
-```
+Left-click the tray icon for settings; right-click for pause/resume and quit. The settings window has five tabs:
 
-- `#` 開頭的整行當作註解，不會生效
-- 例如常講的 Python 常被聽成「派森」，就加一行：
+| Tab | What it controls |
+|---|---|
+| **一般** (General) | Launch at login, notification sounds, paste mode, verbatim output, Chinese numerals → Arabic digits (「四零九六」→ 4096), skip punctuation for short phrases, microphone selection |
+| **熱鍵** (Hotkey) | Which key triggers recording, and the hold-vs-tap threshold |
+| **模型** (Models) | Switch engines, or download one that isn't installed yet |
+| **熱詞** (Hotwords) | Custom correction rules for consistently misheard terms |
+| **歷史** (History) | The last 200 transcripts |
+
+Hotword rules are one per line, `misheard=correct`, with `#` for comments:
 
 ```
 派森=Python
 ```
 
-存檔後立刻生效，不用重開程式。
+Changes take effect immediately — no restart.
 
-## 疑難排解
+## Development
 
-**在某些視窗裡貼不進去**
-如果目標視窗是「以系統管理員身分執行」的（例如某些系統工具），本工具會因為 Windows 的權限機制而貼不進去——這是 Windows 本身的限制，不是故障。這種情況下文字其實已經在剪貼簿裡了，兩個解法擇一即可：
-- 手動按 `Ctrl+V` 貼上
-- 改用「以系統管理員身分執行」啟動本工具
+```bash
+.venv\Scripts\python -m pytest
+```
 
-**出現 cuDNN／CUDA 之類的顯示卡錯誤**
-先確認顯示卡驅動程式是最新版本；如果還是不行，重新執行一次 `setup.bat` 通常能解決。
+144 tests cover the push-to-talk state machine, the post-processing chain, both engine adapters, clipboard save/restore, config, history, and downloads.
 
-**剛啟動、講第一句話時反應比較慢**
-顯示卡如果閒置一段時間會自動降頻休眠，第一句話多花 0.1～0.3 秒才出字是正常現象，講下一句就會恢復正常速度。
+Six of them exercise real models (Breeze, Qwen3, punctuation, VAD) and skip automatically when those aren't downloaded. So a fresh checkout runs **138 tests in ~2.5 seconds with no GPU and no model downloads**, which is exactly what CI does on `windows-latest` / Python 3.12. With the models present locally, all 144 run in about 13 seconds.
 
-## 剪貼簿小提醒
+Design documents for each feature live in [`docs/`](docs/). See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
-貼上文字的那一瞬間，工具會短暫「借用」一下你的剪貼簿，貼完後會自動把你原本複製的內容還原回去——不只文字，**圖片、檔案、帶格式的文字（Word／網頁內容）都會原樣還原**，畫質與內容完全不變。
+## Troubleshooting
 
-剪貼簿的實際讀寫由一個獨立的小幫手行程代辦：就算防毒軟體等監控程式與剪貼簿操作起衝突，受影響的也只是小幫手（會自動重生），主程式與貼上結果不受波及。
+**Text won't paste into some windows.** If the target window runs elevated (as Administrator), Windows blocks input from a non-elevated process. This is a Windows security boundary, not a bug. The text is already on your clipboard — either press `Ctrl+V` manually, or start this tool as Administrator too.
 
-少數例外：某些程式的「進階貼上狀態」無法保留——例如 Excel 複製後的虛線框（再按 Ctrl+V 貼公式連結那種）會被取消。這是 Windows 剪貼簿一經任何變動就會發生的行為，並非本工具特有。
+**cuDNN / CUDA errors.** Update your GPU driver, then re-run `setup.bat`.
+
+**The first sentence after startup is slow.** Idle GPUs downclock; the first transcription can take an extra 0.1–0.3s. Subsequent ones are back to full speed.
+
+**One clipboard caveat.** Restoring the clipboard cannot preserve *advanced paste state* — for example, Excel's marching-ants marquee after a copy is cleared. Any clipboard modification does this on Windows; it isn't specific to this tool.
+
+## License
+
+[MIT](LICENSE).
+
+Recognition models are downloaded from their original publishers at first run and are **not** redistributed by this repository; they remain under their own respective licenses.

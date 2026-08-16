@@ -1,0 +1,81 @@
+name: Bug report
+description: Something isn't working. 回報問題（中英文皆可）
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please fill in the environment fields — this tool injects text into other
+        applications and shares the clipboard with the rest of your system, so the
+        surrounding software usually matters more than the code does.
+
+        環境欄位請盡量填寫：本工具會與其他應用程式和剪貼簿互動，周邊軟體往往是關鍵。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Focus <application>
+        2. Hold CapsLock and say "..."
+        3. Release
+    validations:
+      required: true
+
+  - type: input
+    id: target-app
+    attributes:
+      label: Target application
+      description: Which app were you dictating into? Was it running as Administrator?
+      placeholder: e.g. LINE, Chrome address bar, Word, VS Code terminal
+    validations:
+      required: true
+
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options: [Qwen3-ASR-1.7B (default), Breeze-ASR-25, Not sure]
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU / driver
+      description: GPU model and driver version, or "CPU only"
+      placeholder: e.g. RTX 4070, driver 566.36
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: e.g. Windows 10 Pro 22H2 (19045)
+    validations:
+      required: true
+
+  - type: input
+    id: security-software
+    attributes:
+      label: Antivirus / clipboard manager
+      description: A recurring source of clipboard and input-injection conflicts. Write "none" if none.
+      placeholder: e.g. Kaspersky, Ditto, Windows Defender only
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: From `data/logs/asr.log`. This is automatically formatted as code.
+      render: shell

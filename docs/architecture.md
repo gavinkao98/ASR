@@ -106,6 +106,8 @@ Most user-visible complaints about recognition quality get fixed here rather tha
 
 The Windows API surface is pushed to the edges so the interesting logic stays testable. `PttStateMachine` takes injected timestamps; the post-processing stages are pure functions; `Pipeline` takes every collaborator as a constructor argument and is exercised with fakes.
 
-The four test files that need real models (`test_breeze_engine`, `test_qwen3_engine`, `test_punct`, `test_vad`) guard themselves with `pytest.mark.skipif` on the corresponding `downloads.*_ready()` check. A fresh checkout has no `models/` directory, so they skip — which is what lets CI run the other 148 tests on a GPU-free runner in a couple of seconds.
+The four test files that need real models (`test_breeze_engine`, `test_qwen3_engine`, `test_punct`, `test_vad`) guard themselves with `pytest.mark.skipif` on the corresponding `downloads.*_ready()` check. A fresh checkout has no `models/` directory, so they skip — which is what lets CI run the other 151 tests on a GPU-free runner.
+
+CI also runs `setup.bat` itself and executes the suite with the interpreter it produces. Installing the lock file is not the same thing as the documented install path working, and a first-step failure is the one users never report.
 
 The same principle covers hardware: `tests/test_gpu.py` substitutes a fake CUDA library for `nvcuda.dll`, so every branch of GPU detection — no driver, driver but no device, `cuInit` failure, multiple devices — is exercised on a runner that has no GPU at all.

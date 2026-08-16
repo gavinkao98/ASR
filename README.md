@@ -107,9 +107,9 @@ Changes take effect immediately — no restart.
 .venv\Scripts\python -m pytest
 ```
 
-154 tests cover the push-to-talk state machine, the post-processing chain, both engine adapters, clipboard save/restore, GPU detection, config, history, and downloads.
+157 tests cover the push-to-talk state machine, the post-processing chain, both engine adapters, clipboard save/restore, GPU detection, config, history, and downloads.
 
-Six of them exercise real models (Breeze, Qwen3, punctuation, VAD) and skip automatically when those aren't downloaded. So a fresh checkout runs **148 tests in a couple of seconds with no GPU and no model downloads**, which is exactly what CI does on `windows-latest` / Python 3.12. With the models present locally, all 154 run in about 10 seconds.
+Six of them exercise real models (Breeze, Qwen3, punctuation, VAD) and skip automatically when those aren't downloaded. So a fresh checkout runs **151 tests in about 20 seconds with no GPU and no model downloads**, which is exactly what CI does on `windows-latest` / Python 3.12. With the models present locally, all 157 run in about 10 seconds.
 
 Dependencies are pinned in `requirements.lock.txt` — that is what `setup.bat` installs and what CI's blocking job uses. `requirements.txt` holds the same direct dependencies as version ranges; CI resolves it in a second, advisory job so an upstream breaking release shows up there rather than in someone's first install.
 

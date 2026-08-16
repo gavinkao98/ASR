@@ -1,0 +1,22 @@
+# Breeze-ASR-25 引擎（選用，deprecated）的額外依賴。預設安裝不會裝這些。
+#
+# 安裝：.venv\Scripts\pip install -r requirements-breeze.txt
+#
+# 為什麼要拆出來——這一串加起來約 1GB，而預設引擎 Qwen3 一個都用不到：
+#
+#   * nvidia-*        ~700MB CUDA runtime。只有 CTranslate2 需要；Qwen3 走 llama-server，
+#                     它自帶 cudart（見 downloads.download_qwen3）。
+#   * setuptools 釘死 ctranslate2 4.4.0 在 import 時用 pkg_resources，而 setuptools 81+
+#                     移除了它。釘住舊版是為了 CTranslate2，不是專案本身的需求——所以
+#                     Breeze 一旦移除，這個釘死也跟著消失，Python 3.13+ 的路就通了。
+#   * onnxruntime     faster-whisper 的依賴。VAD 用的 sherpa-onnx 自帶 runtime
+#                     （sherpa-onnx-core），不需要這包。
+#
+# 狀態：Qwen3 在實際使用中辨識品質明顯較好，Breeze 已標記為 deprecated，預計 v1.2 移除。
+# 詳見 README 的 Recognition engines 段。
+
+setuptools==75.8.0
+faster-whisper==1.1.1
+ctranslate2==4.4.0
+nvidia-cublas-cu12~=12.4
+nvidia-cudnn-cu12==8.9.7.29
